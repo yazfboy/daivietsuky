@@ -78,6 +78,8 @@ __all__ = [
     "html_to_text",
     "is_sensitive",
     "wikimedia_candidates",
+    "wikimedia_pages",
+    "wikimedia_screen",
     "ASSETS_DIR",
     "BACKGROUND_IMAGE_SIZE",
     "CACHE_DIR",
@@ -3507,7 +3509,11 @@ WIKIMEDIA_TIMEOUT_S = 8.0
 WIKIMEDIA_MIN_WIDTH = 800
 WIKIMEDIA_MIN_RATIO = 1.2
 _WIKIMEDIA_MIME_EXT = {"image/jpeg": (".jpg", ".jpeg"), "image/png": (".png",)}
-_WIKIMEDIA_HOSTS = ("https://commons.wikimedia.org/", "https://upload.wikimedia.org/")
+# Host chính chủ của Wikimedia: trang mô tả (commons), file gốc (upload) và thumbnail (thumb — Wikimedia hiện phát
+# thumbnail iiurlwidth từ host này). Chỉ là kiểm tra nguồn, không phải tiêu chí chất lượng ảnh.
+_WIKIMEDIA_HOSTS = ("https://commons.wikimedia.org/", "https://upload.wikimedia.org/", "https://thumb.wikimedia.org/")
+# Tăng khi bộ lọc / cách đọc phản hồi đổi, để kết quả cũ trong DiskDPCache (vd. "không có ảnh") không bị dùng lại.
+WIKIMEDIA_FILTER_VERSION = 2
 # Bản đồ, sơ đồ, quốc huy, cờ, biểu tượng... không dùng làm ảnh nền.
 WIKIMEDIA_REJECT_TERMS = (
     "map", "maps", "diagram", "diagrams", "coat of arms", "flag", "flags", "locator", "icon", "icons", "logo", "logos",
@@ -3569,54 +3575,72 @@ def _meta(metadata: Mapping[str, Any], name: str) -> str:
     return html_to_text(item.get("value")) if isinstance(item, Mapping) else ""
 
 
-def wikimedia_candidates(payload: Mapping[str, Any]) -> list[BackdropImage]:
-    """Lọc kết quả API ``generator=search&prop=imageinfo`` thành danh sách ảnh nền hợp lệ (giữ thứ tự xếp hạng).
-
-    Điều kiện: ``image/jpeg``/``image/png`` có đuôi .jpg/.jpeg/.png; khổ ngang ``width > height`` và
-    ``width / height >= 1.2``; ``width >= 800``; giấy phép tự do; có tác giả + giấy phép + link trang gốc;
-    tiêu đề / mô tả / danh mục không chứa từ khóa bản đồ, sơ đồ, quốc huy, cờ, biểu tượng hay từ nhạy cảm.
-    """
+def wikimedia_pages(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """Các trang (file) trong phản hồi API ``generator=search``, theo đúng thứ tự xếp hạng tìm kiếm."""
     query = payload.get("query") if isinstance(payload, Mapping) else None
     pages = (query or {}).get("pages") if isinstance(query, Mapping) else None
     if isinstance(pages, Mapping):
         pages = list(pages.values())
     if not isinstance(pages, list):
         return []
-    ordered = sorted((p for p in pages if isinstance(p, Mapping)), key=lambda p: int(p.get("index", 0) or 0))
+    return sorted((p for p in pages if isinstance(p, Mapping)), key=lambda p: int(p.get("index", 0) or 0))
+
+
+def wikimedia_screen(page: Mapping[str, Any]) -> tuple[BackdropImage | None, str]:
+    """Xét MỘT file theo bộ lọc ảnh nền. Trả ``(ảnh, "")`` nếu đạt, hoặc ``(None, lý do bị loại)``.
+
+    Điều kiện: ``image/jpeg``/``image/png`` có đuôi .jpg/.jpeg/.png; khổ ngang ``width > height`` và
+    ``width / height >= 1.2``; ``width >= 800``; giấy phép tự do; có tác giả + giấy phép + link trang gốc;
+    tiêu đề / mô tả / danh mục không chứa từ khóa bản đồ, sơ đồ, quốc huy, cờ, biểu tượng hay từ nhạy cảm.
+    """
+    infos = page.get("imageinfo")
+    if not isinstance(infos, list) or not infos or not isinstance(infos[0], Mapping):
+        return None, "không có imageinfo"
+    info = infos[0]
+    title = str(page.get("title", ""))
+    mime = str(info.get("mime", "")).lower()
+    extensions = _WIKIMEDIA_MIME_EXT.get(mime)
+    if extensions is None or not title.lower().endswith(extensions):
+        return None, f"định dạng {mime or '?'} — chỉ nhận jpg/png"
+    try:
+        width, height = int(info.get("width") or 0), int(info.get("height") or 0)
+    except (TypeError, ValueError):
+        return None, "thiếu kích thước"
+    if width < WIKIMEDIA_MIN_WIDTH:
+        return None, f"nhỏ: rộng {width}px < {WIKIMEDIA_MIN_WIDTH}px"
+    if height <= 0 or width <= height or width / height < WIKIMEDIA_MIN_RATIO:
+        return None, f"không đủ ngang: {width}×{height} (tỷ lệ {width / max(1, height):.2f} < {WIKIMEDIA_MIN_RATIO})"
+    thumb_url = str(info.get("thumburl") or "")
+    page_url = str(info.get("descriptionurl") or "")
+    if not thumb_url.startswith(_WIKIMEDIA_HOSTS) or not page_url.startswith(_WIKIMEDIA_HOSTS):
+        return None, "thiếu thumburl/descriptionurl hoặc host lạ"
+    metadata = info.get("extmetadata") if isinstance(info.get("extmetadata"), Mapping) else {}
+    artist = _meta(metadata, "Artist")[:200]
+    license_name = _meta(metadata, "LicenseShortName")[:80]
+    license_url = _meta(metadata, "LicenseUrl")
+    if license_url and not license_url.startswith(("https://", "http://")):
+        license_url = ""
+    if not artist:
+        return None, "thiếu tác giả"
+    if not license_name or not WikimediaCommonsSource.is_free_license(license_name):
+        return None, f"giấy phép không tự do / thiếu: {license_name or '—'}"
+    described = " ".join((title, _meta(metadata, "ImageDescription"), _meta(metadata, "ObjectName"),
+                          _meta(metadata, "Categories")))
+    if contains_term(described, WIKIMEDIA_REJECT_TERMS):
+        term = next(t for t in WIKIMEDIA_REJECT_TERMS if contains_term(described, (t,)))
+        return None, f"từ khóa loại: \"{term}\" (bản đồ/sơ đồ/quốc huy/cờ/biểu tượng)"
+    if is_sensitive(described):
+        return None, "từ khóa nhạy cảm"
+    return BackdropImage(title, thumb_url, page_url, width, height, mime, artist, license_name, license_url), ""
+
+
+def wikimedia_candidates(payload: Mapping[str, Any]) -> list[BackdropImage]:
+    """Lọc kết quả API thành danh sách ảnh nền hợp lệ (giữ thứ tự xếp hạng) — xem ``wikimedia_screen``."""
     found: list[BackdropImage] = []
-    for page in ordered:
-        infos = page.get("imageinfo")
-        if not isinstance(infos, list) or not infos or not isinstance(infos[0], Mapping):
-            continue
-        info = infos[0]
-        title = str(page.get("title", ""))
-        mime = str(info.get("mime", "")).lower()
-        extensions = _WIKIMEDIA_MIME_EXT.get(mime)
-        if extensions is None or not title.lower().endswith(extensions):
-            continue
-        try:
-            width, height = int(info.get("width") or 0), int(info.get("height") or 0)
-        except (TypeError, ValueError):
-            continue
-        if width < WIKIMEDIA_MIN_WIDTH or height <= 0 or width <= height or width / height < WIKIMEDIA_MIN_RATIO:
-            continue
-        thumb_url = str(info.get("thumburl") or "")
-        page_url = str(info.get("descriptionurl") or "")
-        if not thumb_url.startswith(_WIKIMEDIA_HOSTS) or not page_url.startswith(_WIKIMEDIA_HOSTS):
-            continue
-        metadata = info.get("extmetadata") if isinstance(info.get("extmetadata"), Mapping) else {}
-        artist = _meta(metadata, "Artist")[:200]
-        license_name = _meta(metadata, "LicenseShortName")[:80]
-        license_url = _meta(metadata, "LicenseUrl")
-        if license_url and not license_url.startswith(("https://", "http://")):
-            license_url = ""
-        if not artist or not license_name or not WikimediaCommonsSource.is_free_license(license_name):
-            continue
-        described = " ".join((title, _meta(metadata, "ImageDescription"), _meta(metadata, "ObjectName"),
-                              _meta(metadata, "Categories")))
-        if contains_term(described, WIKIMEDIA_REJECT_TERMS) or is_sensitive(described):
-            continue
-        found.append(BackdropImage(title, thumb_url, page_url, width, height, mime, artist, license_name, license_url))
+    for page in wikimedia_pages(payload):
+        image, _ = wikimedia_screen(page)
+        if image is not None:
+            found.append(image)
     return found
 
 
@@ -3665,7 +3689,8 @@ class WikimediaBackdropFinder:
         query = " ".join(str(query or "").split())
         if not query or is_sensitive(query):
             return None
-        cache_key = DiskDPCache.make_key("wikimedia:topic", {"k": topic_key, "q": query, "w": WIKIMEDIA_THUMB_WIDTH})
+        cache_key = DiskDPCache.make_key("wikimedia:topic", {"k": topic_key, "q": query, "w": WIKIMEDIA_THUMB_WIDTH,
+                                                             "v": WIKIMEDIA_FILTER_VERSION})
         with self._lock:
             if cache_key in self._memory:
                 cached = self._memory[cache_key]

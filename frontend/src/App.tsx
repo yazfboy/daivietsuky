@@ -18,7 +18,14 @@ import {
   SuggestedPrompt,
 } from './types/hero';
 import { heroAssetCache } from './utils/assetPreloader';
-import { BackendEvent, ChatTurnHandle, openChatTurn, resolveMediaUrl } from './utils/backendClient';
+import {
+  BackendEvent,
+  ChatTurnHandle,
+  ServerStatus,
+  openChatTurn,
+  resolveMediaUrl,
+  wakeBackend,
+} from './utils/backendClient';
 
 function createInitialGreetingMessage(characterId: HeroId): ChatMessage {
   const hero = HEROES[characterId];
@@ -89,6 +96,9 @@ export const App: React.FC = () => {
   const [streamChunk, setStreamChunk] = useState<SpeechChunkData | null>(null);
 
   const turnRef = useRef<ChatTurnHandle | null>(null);
+  // Đánh thức backend (Render ngủ khi rảnh) ngay khi mở trang: trong lúc chờ khóa nút gửi.
+  const [serverStatus, setServerStatus] = useState<ServerStatus>('waking');
+  useEffect(() => wakeBackend(setServerStatus), []);
   // Mã bối cảnh (context_topic_key) của lượt trước, theo từng nhân vật — gửi kèm mỗi request; backend không giữ state.
   const topicKeyRef = useRef<Record<HeroId, string | null>>({
     tran_hung_dao: null,
@@ -523,6 +533,7 @@ export const App: React.FC = () => {
           onSelectPrompt={handleSelectPrompt}
           onToggleSceneMode={handleToggleSceneMode}
           onResetChat={handleResetChat}
+          serverWaking={serverStatus === 'waking'}
         />
       </div>
     </div>

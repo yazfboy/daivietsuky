@@ -103,6 +103,13 @@ def test_hero_events_table() -> None:
     library = SceneLibrary.load()
     check(all(key in library for keys in HERO_EVENTS.values() for key in keys), "Mọi key HERO_EVENTS có trong scene_library.json")
     check(all(TOPIC_KEY_RE.fullmatch(key) for key in library), "Mọi key thư viện khớp ^[a-z0-9_]+$", f"{len(library)} key")
+    from backend.engine.visual_pipeline import contains_term  # noqa: PLC0415
+    homeland = [e for e in library.entries() if e.is_homeland]
+    check(len(homeland) == 3 and not any(
+        contains_term(f"{e.title} {e.wikimedia_search_query} {' '.join(a.replace('_', ' ') for a in e.aliases)}",
+                      ("con son", "kiep bac")) for e in homeland),
+          "Key quê hương không tìm ảnh / đặt tên theo Côn Sơn – Kiếp Bạc",
+          "; ".join(f"{e.key}: {e.wikimedia_search_query}" for e in homeland))
 
 
 async def test_scene_mode_by_code() -> None:

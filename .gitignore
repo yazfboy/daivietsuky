@@ -38,3 +38,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Ảnh ứng viên tải về để nhóm duyệt — KHÔNG commit
+scene_candidates/

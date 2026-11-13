@@ -84,6 +84,71 @@ export function hasBackend(): boolean {
   return API_BASE.length > 0;
 }
 
+function isLocalDevHost(): boolean {
+  return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+}
+
+/** Có backend để gọi không: có VITE_API_BASE_URL lúc build, hoặc đang dev ở máy (proxy Vite → :8000). */
+export function backendReachable(): boolean {
+  return API_BASE.length > 0 || isLocalDevHost();
+}
+
+export type ServerStatus = 'waking' | 'ready' | 'unavailable' | 'offline';
+
+export const WAKE_RETRY_MS = 5000;
+export const WAKE_MAX_MS = 120_000;
+const WAKE_ATTEMPT_TIMEOUT_MS = 4500;
+
+/**
+ * Đánh thức backend (Render gói free ngủ sau ~15 phút): gọi `GET /health` ngay, cứ 5 giây thử lại, tối đa 2 phút.
+ * `onStatus`: 'waking' khi bắt đầu → 'ready' khi /health trả {"status":"ok"} → 'unavailable' nếu hết 2 phút;
+ * 'offline' nếu bản build không có backend (chạy engine trong trình duyệt). Trả về hàm huỷ.
+ */
+export function wakeBackend(onStatus: (status: ServerStatus) => void): () => void {
+  if (!backendReachable()) {
+    onStatus('offline');
+    return () => undefined;
+  }
+  let cancelled = false;
+  let timer: number | undefined;
+  let controller: AbortController | null = null;
+  const started = Date.now();
+  onStatus('waking');
+
+  const attempt = async () => {
+    if (cancelled) return;
+    controller = new AbortController();
+    const abortTimer = window.setTimeout(() => controller?.abort(), WAKE_ATTEMPT_TIMEOUT_MS);
+    let ok = false;
+    try {
+      const response = await fetch(`${API_BASE}/health`, { cache: 'no-store', signal: controller.signal });
+      const body = response.ok ? ((await response.json()) as { status?: string }) : null;
+      ok = body?.status === 'ok';
+    } catch {
+      ok = false;
+    } finally {
+      window.clearTimeout(abortTimer);
+    }
+    if (cancelled) return;
+    if (ok) {
+      onStatus('ready');
+      return;
+    }
+    const elapsed = Date.now() - started;
+    if (elapsed + WAKE_RETRY_MS > WAKE_MAX_MS) {
+      onStatus('unavailable'); // mở khóa: các lượt hỏi sẽ tự dùng engine trong trình duyệt
+      return;
+    }
+    timer = window.setTimeout(attempt, WAKE_RETRY_MS);
+  };
+  void attempt();
+  return () => {
+    cancelled = true;
+    window.clearTimeout(timer);
+    controller?.abort();
+  };
+}
+
 /** Phân giải URL ảnh/cảnh động do backend trả (vd. "/assets/scenes/..") về đúng host backend khi deploy riêng. */
 export function resolveMediaUrl(path?: string): string | undefined {
   if (!path) return undefined;
@@ -119,8 +184,7 @@ export function openChatTurn(
 
   // Trên host tĩnh (GitHub Pages) mà không khai báo VITE_API_BASE_URL thì không có backend để gọi:
   // chuyển ngay sang engine trong trình duyệt, khỏi chờ 4 giây timeout. (Dev ở localhost vẫn thử qua proxy Vite.)
-  const isLocalDev = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
-  if (!API_BASE && !isLocalDev) {
+  if (!backendReachable()) {
     window.setTimeout(() => onFailure(false), 0);
     return { close: () => undefined };
   }
