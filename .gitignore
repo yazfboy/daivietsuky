@@ -1,0 +1,39 @@
+# ───────────────────────── BÍ MẬT — KHÔNG BAO GIỜ COMMIT ─────────────────────────
+# 5 API key Google AI Studio sống trong file này; chỉ nằm trên máy/máy chủ, không lên Git.
+.env
+.env.*
+!.env.example
+*.key
+secrets.*
+
+# ───────────────────────── Python / backend ─────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+backend/.cache/
+
+# Cảnh động do visual_pipeline sinh ra lúc chạy (không phải mã nguồn)
+frontend/public/assets/scenes/
+frontend/public/assets/renders/
+
+# ───────────────────────── Node / frontend ─────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.local
+.vite/
+
+# ───────────────────────── Hệ điều hành / IDE ─────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json

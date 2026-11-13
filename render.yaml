@@ -1,0 +1,19 @@
+# Render Blueprint — deploy backend Đại Việt Sử Ký (FastAPI + WebSocket) chỉ với vài cú bấm.
+# Cách dùng:
+#   1. Vào https://dashboard.render.com → New → Blueprint → chọn repo yazfboy/daivietsuky.
+#   2. Render đọc file này, tạo một Web Service chạy Docker.
+#   3. Ở mục Environment, dán 5 key vào biến BÍ MẬT GEMINI_API_KEYS (phân tách bằng dấu phẩy). KHÔNG commit key.
+#   4. Deploy xong sẽ có URL dạng https://daivietsuky.onrender.com → đặt URL này vào biến VITE_API_BASE_URL
+#      của GitHub Pages (repo → Settings → Secrets and variables → Actions → Variables) rồi chạy lại workflow deploy.
+services:
+  - type: web
+    name: daivietsuky-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: GEMINI_API_KEYS
+        sync: false   # nhập thủ công trên dashboard (bí mật) — 5 key cách nhau bởi dấu phẩy
+      - key: PYTHONUNBUFFERED
+        value: "1"

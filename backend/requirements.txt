@@ -1,0 +1,8 @@
+# Phase 1 (key pool, DP, AI Nhân vật, AI Đạo diễn) chỉ dùng thư viện chuẩn Python 3.10+.
+# Phase 2 (Visual & Animation Engine):
+Pillow==13.0.0
+gradio_client==2.7.2
+# Phase 4 (máy chủ FastAPI + WebSocket):
+fastapi==0.162.5
+uvicorn[standard]==0.54.0
+httpx==0.28.1

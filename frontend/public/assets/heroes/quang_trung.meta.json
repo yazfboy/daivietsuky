@@ -1,0 +1,41 @@
+{
+ "character_id": "quang_trung",
+ "source": "huggingface:black-forest-labs/FLUX.1-schnell",
+ "generation": {
+  "space_id": "black-forest-labs/FLUX.1-schnell",
+  "seed": 1795783837,
+  "prompt": "Portrait of Emperor Quang Trung (Nguyễn Huệ) of the Tây Sơn dynasty, Vietnam, late 18th-century Tây Sơn era Đại Việt. A powerful commander in his late thirties with a stern, resolute expression and a thin mustache. He wears a traditional Vietnamese general's helmet and golden-brown lamellar armor featuring a prominent dragon-face breastplate. A flowing brown cape drapes over his shoulders. He stands heroically, one hand raised in a commanding gesture while the other rests on the hilt of a sheathed sword.. Knee-length three-quarter body portrait, standing upright and facing the viewer frontally, centered, symmetrical stance, both arms relaxed along the sides with both hands fully visible inside the frame, his left hand resting on the hilt of a sheathed sword at his waist. Calm dignified expression, lips gently closed, mouth clearly visible. Isolated on a plain flat solid bright green background (#00FF00), no shadows, no scenery, no other people, no text. Even soft studio lighting, highly detailed historical oil painting.",
+  "elapsed_s": 6.75,
+  "verify": {
+   "single_person": true,
+   "frontal": true,
+   "body_framing_ok": true,
+   "hands_ok": true,
+   "mouth_visible_closed": true,
+   "plain_background": true,
+   "historical_costume": true,
+   "matches_description": 7,
+   "overall": 7,
+   "issues": "The sword is unsheathed rather than resting on a hilt, and the raised commanding gesture is missing."
+  },
+  "score": 7.4,
+  "cutout": "chroma"
+ },
+ "iconography": "A powerful commander in his late thirties with a stern, resolute expression and a thin mustache. He wears a traditional Vietnamese general's helmet and golden-brown lamellar armor featuring a prominent dragon-face breastplate. A flowing brown cape drapes over his shoulders. He stands heroically, one hand raised in a commanding gesture while the other rests on the hilt of a sheathed sword.",
+ "wikimedia_reference": {
+  "title": "File:Quang Trung statue 02.jpg",
+  "page_url": "https://commons.wikimedia.org/wiki/File:Quang_Trung_statue_02.jpg",
+  "thumb_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/59/Quang_Trung_statue_02.jpg/960px-Quang_Trung_statue_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+  "width": 975,
+  "height": 1300,
+  "mime": "image/jpeg",
+  "license": "CC BY-SA 3.0",
+  "artist": "Tượng_đài_Quang_Trung_tại_Bảo_tàng_Quang_Trung.JPG : The original uploader was Liftold at Vietnamese Wikipedia . derivative work: Phó Nháy ( talk )"
+ },
+ "wikimedia_reference_score": 9,
+ "size": [
+  896,
+  1152
+ ],
+ "created_at": "2026-11-12T19:35:28"
+}

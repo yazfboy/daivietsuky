@@ -1,0 +1,50 @@
+name: Deploy frontend to GitHub Pages
+
+# Mỗi lần đẩy lên main (hoặc chạy tay) sẽ build frontend và publish lên nhánh gh-pages,
+# từ đó GitHub Pages phục vụ https://yazfboy.github.io/daivietsuky/.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build (base /daivietsuky/)
+        working-directory: frontend
+        env:
+          VITE_BASE: /daivietsuky/
+          # Tùy chọn: địa chỉ backend đã deploy (Render/HF). Đặt ở repo → Settings → Secrets and variables →
+          # Actions → Variables → VITE_API_BASE_URL. Bỏ trống thì trang tự chạy engine trong trình duyệt.
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: npm run build
+
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: frontend/dist
+          publish_branch: gh-pages
+          force_orphan: true
