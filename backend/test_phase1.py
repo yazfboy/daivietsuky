@@ -758,12 +758,15 @@ async def test_o9_director_invariants(c: Checker) -> None:
         if "PHÂN CẢNH" in prompt:
             return json.dumps({"beats": [{"segment_index": 0, "character_action": "pointing at the river",
                                           "scene_prompt": "Beat zero."}]})
+        # AI cố tình đề xuất scene_mode SAI → code phải ghi đè theo HERO_EVENTS.
         if "Bạch Đằng" in prompt.split("CÂU HỎI NGƯỜI DÙNG")[-1]:
-            return json.dumps({"reason": "Hỏi về trận đánh.", "scene_mode": "BACKGROUND_ACTION", "background_type": "HOMELAND",
-                               "context_key": "bach_dang_1288", "background_prompt": "A river at dawn.",
+            return json.dumps({"reason": "Hỏi về trận đánh.", "scene_mode": "FOREGROUND_TALKING",
+                               "question_kind": "historical_topic", "keep_previous_topic": False,
+                               "context_topic_key": "Bach Dang 1288", "background_prompt": "A river at dawn.",
                                "character_action": "commanding the fleet", "scene_prompt": "A battle on a river."})
-        return json.dumps({"reason": "Hỏi tiểu sử.", "scene_mode": "FOREGROUND_TALKING", "background_type": "BATTLEFIELD",
-                           "context_key": "bach_dang_1288", "background_prompt": "A generic village.",
+        return json.dumps({"reason": "Hỏi tiểu sử.", "scene_mode": "BACKGROUND_ACTION",
+                           "question_kind": "biography", "keep_previous_topic": False,
+                           "context_topic_key": "que_huong_tuc_mac", "background_prompt": "A generic village.",
                            "character_action": "", "scene_prompt": "A portrait."})
 
     pool = GeminiKeyPool(FAKE_KEYS, transport=FakeTransport(responder=responder))
@@ -772,7 +775,7 @@ async def test_o9_director_invariants(c: Checker) -> None:
         bio = await director.direct("tran_hung_dao", QUESTION_BIO)
         c.check(bio.scene_mode == SCENE_FOREGROUND_TALKING and bio.mouth_sync_enabled is True,
                 "FOREGROUND_TALKING ⇒ mouth_sync_enabled = True")
-        c.check(bio.background_type == BACKGROUND_HOMELAND and bio.context_key == "homeland"
+        c.check(bio.background_type == BACKGROUND_HOMELAND and bio.context_key == "que_huong_tuc_mac"
                 and mentions(bio.background_prompt, get_character("tran_hung_dao").homeland_aliases),
                 "Nền bị AI viết lệch → ép về ảnh động quê hương (Tức Mặc / Thiên Trường)")
         c.check(bio.character_reference_path == "/assets/heroes/tran_hung_dao.png"
@@ -915,7 +918,7 @@ async def live_tests(c: Checker) -> None:
             c.check(directive.decided_by == "llm", "Quyết định do AI Đạo diễn (Gemini) đưa ra", directive.decided_by)
             c.check(directive.scene_mode == SCENE_FOREGROUND_TALKING, "scene_mode = FOREGROUND_TALKING", directive.scene_mode)
             c.check(directive.mouth_sync_enabled is True, "mouth_sync_enabled = True")
-            c.check(directive.background_type == BACKGROUND_HOMELAND and directive.context_key == "homeland",
+            c.check(directive.background_type == BACKGROUND_HOMELAND and directive.context_key == "que_huong_tuc_mac",
                     "Cảnh nền = ảnh động QUÊ HƯƠNG (HOMELAND)")
             c.check(mentions(directive.background_prompt, profile.homeland_aliases),
                     "Prompt nền nhắc đúng quê hương Tức Mặc / Thiên Trường / Nam Định")

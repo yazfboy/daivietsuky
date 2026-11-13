@@ -66,8 +66,11 @@ __all__ = [
     "ContextAnalyzer",
     "ContextEntity",
     "ContextFingerprint",
+    "TOPIC_KEY_MAX_LEN",
+    "TOPIC_KEY_RE",
     "ScanToken",
     "SceneSegment",
+    "TopicKeyCache",
     "SegmentationConfig",
     "SegmentationResult",
     "TextUnit",
@@ -78,7 +81,9 @@ __all__ = [
     "dp_weighted_edit_distance",
     "has_vietnamese_diacritics",
     "is_sentence_punct",
+    "is_valid_topic_key",
     "normalize_text",
+    "normalize_topic_key",
     "scan_text",
     "segmentation_cost",
     "split_text_units",
@@ -210,6 +215,37 @@ def strip_diacritics(text: str) -> str:
 
 def has_vietnamese_diacritics(text: str) -> bool:
     return strip_diacritics(text) != text
+
+
+# --------------------------------------------------------------------------------------
+# Mã bối cảnh chuẩn hóa (context_topic_key)
+# --------------------------------------------------------------------------------------
+TOPIC_KEY_RE = re.compile(r"^[a-z0-9_]+$")
+TOPIC_KEY_MAX_LEN = 64
+
+
+def is_valid_topic_key(value: object) -> bool:
+    """Đúng regex ``^[a-z0-9_]+$``, không quá ``TOPIC_KEY_MAX_LEN`` ký tự, không bắt đầu/kết thúc bằng ``_``."""
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= TOPIC_KEY_MAX_LEN
+        and TOPIC_KEY_RE.fullmatch(value) is not None
+        and not value.startswith("_")
+        and not value.endswith("_")
+    )
+
+
+def normalize_topic_key(value: object) -> str:
+    """Chuẩn hóa về ``snake_case`` không dấu, chữ thường: "Bạch Đằng 1288" → ``bach_dang_1288``.
+
+    Trả về chuỗi rỗng nếu không còn ký tự hợp lệ nào (người gọi tự chọn mã dự phòng).
+    """
+    if not isinstance(value, str):
+        return ""
+    text = strip_diacritics(unicodedata.normalize("NFKC", value)).lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+    text = re.sub(r"_+", "_", text)
+    return text[:TOPIC_KEY_MAX_LEN].rstrip("_")
 
 
 def _group_syllables(group: int, full: bool) -> int:
@@ -627,6 +663,50 @@ class VisualStateCache(Generic[T]):
     def stats(self) -> dict[str, int]:
         with self._lock:
             return {"states": len(self._states), "hits": self.hits, "misses": self.misses}
+
+
+class TopicKeyCache(Generic[T]):
+    """Bảng băm O(1) theo ``(character_id, context_topic_key)`` — LRU, an toàn đa luồng.
+
+    Khi AI Đạo diễn trả lại đúng ``previous_context_topic_key`` (câu hỏi vẫn cùng chủ đề), trạng thái cảnh và
+    ảnh nền của chủ đề đó được lấy lại bằng một phép tra băm, không tìm ảnh / dựng lại.
+    """
+
+    def __init__(self, *, capacity: int = 256) -> None:
+        if capacity < 1:
+            raise ValueError("capacity phải >= 1")
+        self._capacity = capacity
+        self._lock = threading.Lock()
+        self._items: OrderedDict[tuple[str, str], T] = OrderedDict()
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, character_id: str, topic_key: str) -> T | None:
+        with self._lock:
+            item = self._items.get((character_id, topic_key))
+            if item is None:
+                self.misses += 1
+                return None
+            self._items.move_to_end((character_id, topic_key))
+            self.hits += 1
+            return item
+
+    def put(self, character_id: str, topic_key: str, value: T) -> None:
+        if not is_valid_topic_key(topic_key):
+            raise ValueError(f"context_topic_key không hợp lệ: {topic_key!r}")
+        with self._lock:
+            self._items[(character_id, topic_key)] = value
+            self._items.move_to_end((character_id, topic_key))
+            while len(self._items) > self._capacity:
+                self._items.popitem(last=False)
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._items)
+
+    def stats(self) -> dict[str, int]:
+        with self._lock:
+            return {"topics": len(self._items), "hits": self.hits, "misses": self.misses}
 
 
 # --------------------------------------------------------------------------------------

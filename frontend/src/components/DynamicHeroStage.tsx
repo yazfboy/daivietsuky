@@ -13,7 +13,18 @@ import {
   sanitizeRig,
 } from '../engine/heroRig';
 import { HeroGLRenderer } from '../engine/heroGLRenderer';
-import { BackdropCamera, SceneBackdrop, resolveBackdropTheme } from '../engine/sceneBackdrop';
+import { BackdropCamera, BackdropTheme, SceneBackdrop, resolveBackdropTheme } from '../engine/sceneBackdrop';
+
+/** Chỉ nhận link http(s) cho dòng ghi nguồn (chặn javascript:, data:...). */
+const safeHttpUrl = (value?: string): string | undefined => {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+};
 import { StreamingMouthSync, textSyllables } from '../engine/visemeSync';
 
 /**
@@ -398,12 +409,22 @@ export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
       const t = (now - epoch) / 1000;
       const { width, height, dpr } = resize();
       const scene = live.sceneData;
-      const theme = resolveBackdropTheme({
-        contextKey: scene?.contextKey ?? 'homeland',
-        backgroundType: scene?.backgroundType ?? 'HOMELAND',
-        sceneMode: live.sceneMode,
-      });
-      const key = `${live.characterId}|${theme}|${scene?.contextKey ?? 'homeland'}`;
+      // Có backend: ảnh nền do backend chọn (thư viện → Wikimedia → phông trung tính), không vẽ cảnh thủ tục.
+      // Chế độ offline (không có backdrop): cảnh động vẽ thủ tục như cũ.
+      const info = scene?.backdrop;
+      const photoUrl = info && info.source !== 'neutral' ? info.imageUrl : undefined;
+      const theme: BackdropTheme = info
+        ? photoUrl
+          ? 'photo'
+          : 'neutral'
+        : resolveBackdropTheme({
+            contextKey: scene?.contextKey ?? 'homeland',
+            backgroundType: scene?.backgroundType ?? 'HOMELAND',
+            sceneMode: live.sceneMode,
+          });
+      const key = info
+        ? `${live.characterId}|${theme}|${info.contextTopicKey}|${photoUrl ?? info.title}`
+        : `${live.characterId}|${theme}|${scene?.contextKey ?? 'homeland'}`;
       if (key !== backdropKey) {
         if (backdrop && transitionCtx) {
           transition.width = canvas.width;
@@ -412,10 +433,15 @@ export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
           transitionStart = t;
         }
         backdrop?.dispose();
-        backdrop = new SceneBackdrop(theme, live.characterId, scene?.contextKey ?? 'homeland');
+        backdrop = new SceneBackdrop(
+          theme,
+          live.characterId,
+          info?.contextTopicKey ?? scene?.contextKey ?? 'homeland',
+          info ? { title: info.title, subtitle: info.subtitle } : null
+        );
         backdropKey = key;
       }
-      const externalUrl = scene?.animationWebpUrl || scene?.backgroundPngUrl;
+      const externalUrl = info ? photoUrl : scene?.animationWebpUrl || scene?.backgroundPngUrl;
       backdrop?.setExternalImage(externalUrl ? loadImage(externalImages, externalUrl) : null);
 
       const k = smoothstep(modeBlend);
@@ -487,6 +513,43 @@ export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
             'linear-gradient(to right, rgba(11,12,14,0.55) 0%, rgba(11,12,14,0.08) 28%, rgba(11,12,14,0.3) 65%, rgba(11,12,14,0.72) 100%), linear-gradient(to top, rgba(11,12,14,0.7) 0%, transparent 24%, transparent 84%, rgba(11,12,14,0.6) 100%)',
         }}
       />
+
+      {/* Ghi nguồn ảnh nền (thư viện / Wikimedia Commons) — hiển thị dạng chữ thuần, không render HTML */}
+      {sceneData?.backdrop && sceneData.backdrop.source !== 'neutral' && sceneData.backdrop.imageUrl && (
+        <div
+          data-testid="backdrop-attribution"
+          className="absolute bottom-16 right-4 z-20 max-w-[min(420px,calc(100vw-32px))] truncate rounded-md bg-[#0B0C0E]/70 px-2.5 py-1 text-[10px] text-zinc-300 backdrop-blur-sm"
+        >
+          {'Ảnh: '}
+          {sceneData.backdrop.author || 'không rõ tác giả'}
+          {sceneData.backdrop.license ? ' · ' : ''}
+          {safeHttpUrl(sceneData.backdrop.licenseUrl) ? (
+            <a
+              href={safeHttpUrl(sceneData.backdrop.licenseUrl)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-zinc-500 hover:text-white"
+            >
+              {sceneData.backdrop.license}
+            </a>
+          ) : (
+            sceneData.backdrop.license
+          )}
+          {safeHttpUrl(sceneData.backdrop.sourceUrl) && (
+            <>
+              {' · '}
+              <a
+                href={safeHttpUrl(sceneData.backdrop.sourceUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-zinc-500 hover:text-white"
+              >
+                {sceneData.backdrop.source === 'wikimedia' ? 'Wikimedia Commons' : 'Nguồn ảnh'}
+              </a>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Chỉ báo trạng thái đồng bộ khẩu hình / hành động */}
       <div className="pointer-events-none absolute bottom-6 left-1/2 z-20 -translate-x-1/2 lg:left-[calc(290px+17vw)]">

@@ -37,6 +37,7 @@ import base64
 import dataclasses
 import functools
 import hashlib
+import html
 import io
 import json
 import math
@@ -67,8 +68,16 @@ from ..core.dp_optimizer import (
     count_syllables,
 )
 from ..core.key_pool import DEFAULT_ENV_PATH, KeyPoolError, MultiThreadKeyPool
+from ..core.scene_library import SceneLibrary
 
 __all__ = [
+    "BackdropImage",
+    "BackdropResolver",
+    "WikimediaBackdropFinder",
+    "contains_term",
+    "html_to_text",
+    "is_sensitive",
+    "wikimedia_candidates",
     "ASSETS_DIR",
     "BACKGROUND_IMAGE_SIZE",
     "CACHE_DIR",
@@ -3485,3 +3494,258 @@ class ConsistentHeroAnimationEngine:
             animation.seek(min(frame_index, getattr(animation, "n_frames", 1) - 1))
             frame = animation.convert("RGB")
         return await self.vision.judge_consistency(hero.load_layer(), frame)
+
+
+# ======================================================================================
+# 12. Ảnh nền theo bối cảnh: Thư viện dựng sẵn → Wikimedia Commons (lọc nghiêm ngặt) → Phông trung tính
+#     (bản này KHÔNG dùng GPU tạo ảnh live)
+# ======================================================================================
+WIKIMEDIA_USER_AGENT = "DaiVietSuKy/1.0 (https://github.com/yazfboy/daivietsuky)"
+WIKIMEDIA_API_URL = "https://commons.wikimedia.org/w/api.php"
+WIKIMEDIA_THUMB_WIDTH = 1920  # cỡ thumbnail chuẩn của Wikimedia; không tải file gốc
+WIKIMEDIA_TIMEOUT_S = 8.0
+WIKIMEDIA_MIN_WIDTH = 800
+WIKIMEDIA_MIN_RATIO = 1.2
+_WIKIMEDIA_MIME_EXT = {"image/jpeg": (".jpg", ".jpeg"), "image/png": (".png",)}
+_WIKIMEDIA_HOSTS = ("https://commons.wikimedia.org/", "https://upload.wikimedia.org/")
+# Bản đồ, sơ đồ, quốc huy, cờ, biểu tượng... không dùng làm ảnh nền.
+WIKIMEDIA_REJECT_TERMS = (
+    "map", "maps", "diagram", "diagrams", "coat of arms", "flag", "flags", "locator", "icon", "icons", "logo", "logos",
+)
+# Từ khóa nhạy cảm — chặn ở cả câu truy vấn lẫn tên / mô tả file.
+SENSITIVE_TERMS = (
+    "nude", "nudes", "naked", "nudity", "sex", "sexual", "sexy", "porn", "pornography", "erotic", "erotica",
+    "topless", "lingerie", "bikini", "fetish", "hentai", "xxx", "genitals", "gore", "corpse", "corpses",
+    "dead body", "beheading", "decapitation", "execution", "torture", "mutilation", "nazi", "swastika",
+    "khoa than", "khiem nha", "tinh duc", "xac chet",
+)
+
+
+def html_to_text(value: Any) -> str:
+    """Chuyển HTML (vd. trường ``Artist`` trong extmetadata) thành chữ thường: bỏ thẻ, giải mã thực thể."""
+    if not isinstance(value, str):
+        return ""
+    text = re.sub(r"(?is)<(script|style)\b.*?</\1\s*>", " ", value)
+    text = _HTML_TAG_RE.sub(" ", text)
+    return " ".join(html.unescape(text).split())
+
+
+def _term_haystack(text: str) -> str:
+    plain = unicodedata.normalize("NFD", (text or "").lower())
+    plain = "".join(ch for ch in plain if unicodedata.category(ch) != "Mn").replace("đ", "d")
+    return " " + re.sub(r"[^a-z0-9]+", " ", plain) + " "
+
+
+def contains_term(text: str, terms: Sequence[str]) -> bool:
+    """Khớp nguyên từ / cụm từ (không khớp nửa từ: "mapping" không phải "map")."""
+    haystack = _term_haystack(text)
+    return any(f" {term} " in haystack for term in terms)
+
+
+def is_sensitive(text: str) -> bool:
+    return contains_term(text, SENSITIVE_TERMS)
+
+
+@dataclass(frozen=True)
+class BackdropImage:
+    """Một ảnh Wikimedia đã qua bộ lọc, kèm đầy đủ ghi nguồn."""
+
+    title: str
+    thumb_url: str
+    page_url: str  # descriptionurl — trang ảnh gốc
+    width: int  # kích thước file gốc (imageinfo)
+    height: int
+    mime: str
+    artist: str  # chữ thường, đã lọc HTML
+    license: str
+    license_url: str
+
+    def to_json(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+def _meta(metadata: Mapping[str, Any], name: str) -> str:
+    item = metadata.get(name)
+    return html_to_text(item.get("value")) if isinstance(item, Mapping) else ""
+
+
+def wikimedia_candidates(payload: Mapping[str, Any]) -> list[BackdropImage]:
+    """Lọc kết quả API ``generator=search&prop=imageinfo`` thành danh sách ảnh nền hợp lệ (giữ thứ tự xếp hạng).
+
+    Điều kiện: ``image/jpeg``/``image/png`` có đuôi .jpg/.jpeg/.png; khổ ngang ``width > height`` và
+    ``width / height >= 1.2``; ``width >= 800``; giấy phép tự do; có tác giả + giấy phép + link trang gốc;
+    tiêu đề / mô tả / danh mục không chứa từ khóa bản đồ, sơ đồ, quốc huy, cờ, biểu tượng hay từ nhạy cảm.
+    """
+    query = payload.get("query") if isinstance(payload, Mapping) else None
+    pages = (query or {}).get("pages") if isinstance(query, Mapping) else None
+    if isinstance(pages, Mapping):
+        pages = list(pages.values())
+    if not isinstance(pages, list):
+        return []
+    ordered = sorted((p for p in pages if isinstance(p, Mapping)), key=lambda p: int(p.get("index", 0) or 0))
+    found: list[BackdropImage] = []
+    for page in ordered:
+        infos = page.get("imageinfo")
+        if not isinstance(infos, list) or not infos or not isinstance(infos[0], Mapping):
+            continue
+        info = infos[0]
+        title = str(page.get("title", ""))
+        mime = str(info.get("mime", "")).lower()
+        extensions = _WIKIMEDIA_MIME_EXT.get(mime)
+        if extensions is None or not title.lower().endswith(extensions):
+            continue
+        try:
+            width, height = int(info.get("width") or 0), int(info.get("height") or 0)
+        except (TypeError, ValueError):
+            continue
+        if width < WIKIMEDIA_MIN_WIDTH or height <= 0 or width <= height or width / height < WIKIMEDIA_MIN_RATIO:
+            continue
+        thumb_url = str(info.get("thumburl") or "")
+        page_url = str(info.get("descriptionurl") or "")
+        if not thumb_url.startswith(_WIKIMEDIA_HOSTS) or not page_url.startswith(_WIKIMEDIA_HOSTS):
+            continue
+        metadata = info.get("extmetadata") if isinstance(info.get("extmetadata"), Mapping) else {}
+        artist = _meta(metadata, "Artist")[:200]
+        license_name = _meta(metadata, "LicenseShortName")[:80]
+        license_url = _meta(metadata, "LicenseUrl")
+        if license_url and not license_url.startswith(("https://", "http://")):
+            license_url = ""
+        if not artist or not license_name or not WikimediaCommonsSource.is_free_license(license_name):
+            continue
+        described = " ".join((title, _meta(metadata, "ImageDescription"), _meta(metadata, "ObjectName"),
+                              _meta(metadata, "Categories")))
+        if contains_term(described, WIKIMEDIA_REJECT_TERMS) or is_sensitive(described):
+            continue
+        found.append(BackdropImage(title, thumb_url, page_url, width, height, mime, artist, license_name, license_url))
+    return found
+
+
+class WikimediaBackdropFinder:
+    """Tìm ảnh nền trên Wikimedia Commons theo ``wikimedia_search_query``; cache kết quả theo ``context_topic_key``."""
+
+    def __init__(
+        self,
+        cache: DiskDPCache | None = None,
+        *,
+        timeout_s: float = WIKIMEDIA_TIMEOUT_S,
+        fetch: Callable[[str], bytes] | None = None,
+    ) -> None:
+        self.cache = cache
+        self.timeout_s = min(timeout_s, WIKIMEDIA_TIMEOUT_S)
+        self._fetch = fetch or self._http_get
+        self._memory: dict[str, dict[str, Any] | None] = {}
+        self._lock = threading.Lock()
+
+    def _http_get(self, url: str) -> bytes:
+        request = urllib.request.Request(url, headers={"User-Agent": WIKIMEDIA_USER_AGENT})
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
+                return response.read()
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise AssetSourceError(f"Wikimedia Commons không phản hồi: {exc}") from None
+
+    @staticmethod
+    def build_url(query: str) -> str:
+        params = {
+            "action": "query",
+            "format": "json",
+            "generator": "search",
+            "gsrnamespace": "6",
+            "gsrsearch": f"{query} filetype:bitmap",
+            "gsrlimit": "20",
+            "prop": "imageinfo",
+            "iiprop": "url|size|mime|extmetadata",
+            "iiurlwidth": str(WIKIMEDIA_THUMB_WIDTH),
+            "iiextmetadatafilter": "Artist|LicenseShortName|LicenseUrl|ImageDescription|ObjectName|Categories",
+        }
+        return f"{WIKIMEDIA_API_URL}?{urllib.parse.urlencode(params)}"
+
+    def find(self, topic_key: str, query: str) -> BackdropImage | None:
+        """Ảnh đạt chuẩn đầu tiên, hoặc ``None`` nếu không có. Lỗi mạng → ``AssetSourceError`` (không cache)."""
+        query = " ".join(str(query or "").split())
+        if not query or is_sensitive(query):
+            return None
+        cache_key = DiskDPCache.make_key("wikimedia:topic", {"k": topic_key, "q": query, "w": WIKIMEDIA_THUMB_WIDTH})
+        with self._lock:
+            if cache_key in self._memory:
+                cached = self._memory[cache_key]
+                return BackdropImage(**cached) if cached else None
+        stored = self.cache.get_json(cache_key) if self.cache is not None else None
+        if isinstance(stored, Mapping) and "image" in stored:
+            image = stored["image"]
+            with self._lock:
+                self._memory[cache_key] = image
+            return BackdropImage(**image) if image else None
+        try:
+            payload = json.loads(self._fetch(self.build_url(query)).decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise AssetSourceError(f"Wikimedia trả dữ liệu hỏng: {exc}") from None
+        candidates = wikimedia_candidates(payload)
+        image = candidates[0].to_json() if candidates else None
+        with self._lock:
+            self._memory[cache_key] = image
+        if self.cache is not None:
+            self.cache.put_json(cache_key, {"image": image}, meta={"topic": topic_key, "query": query})
+        return BackdropImage(**image) if image else None
+
+
+class BackdropResolver:
+    """Chọn ảnh nền cho chỉ thị của AI Đạo diễn: thư viện dựng sẵn → Wikimedia → phông trung tính.
+
+    Kết quả (không gồm lỗi mạng) được nhớ O(1) theo ``(context_topic_key, image_allowed, query)``.
+    """
+
+    def __init__(self, library: SceneLibrary, finder: WikimediaBackdropFinder | None, *,
+                 timeout_s: float = WIKIMEDIA_TIMEOUT_S, public_dir: Path | None = None) -> None:
+        self.library = library
+        self.public_dir = public_dir if public_dir is not None else ASSETS_DIR.parent
+        self.finder = finder
+        self.timeout_s = min(timeout_s, WIKIMEDIA_TIMEOUT_S)
+        self._memo: dict[tuple[str, bool, str], dict[str, Any]] = {}
+
+    @staticmethod
+    def neutral(directive: SceneDirective, detail: str = "") -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "source": "neutral",
+            "contextTopicKey": directive.context_topic_key,
+            "title": directive.topic_title,
+            "subtitle": directive.topic_year,
+        }
+        if detail:
+            payload["detail"] = detail[:200]
+        return payload
+
+    async def resolve(self, directive: SceneDirective) -> dict[str, Any]:
+        key = directive.context_topic_key
+        memo_key = (key, directive.image_allowed, directive.wikimedia_search_query)
+        if memo_key in self._memo:
+            return {**self._memo[memo_key], "fromCache": True}
+        base = {"contextTopicKey": key, "title": directive.topic_title, "subtitle": directive.topic_year}
+        if not directive.image_allowed:
+            result = self.neutral(directive)
+            self._memo[memo_key] = result
+            return {**result, "fromCache": False}
+        entry = self.library.get(key)
+        if entry is not None and entry.image_file(self.public_dir) is not None:
+            result = {**base, "source": "library", "imageUrl": entry.image, "author": entry.author,
+                      "license": entry.license, "licenseUrl": entry.license_url, "sourceUrl": entry.source_url}
+            self._memo[memo_key] = result
+            return {**result, "fromCache": False}
+        query = directive.wikimedia_search_query
+        if self.finder is None or not query:
+            result = self.neutral(directive)
+            self._memo[memo_key] = result
+            return {**result, "fromCache": False}
+        try:
+            image = await asyncio.wait_for(asyncio.to_thread(self.finder.find, key, query), timeout=self.timeout_s)
+        except (asyncio.TimeoutError, AssetSourceError, OSError) as exc:
+            # Wikimedia lỗi → phông trung tính (KHÔNG rơi về ảnh quê hương hay cảnh vẽ bằng code); không nhớ lỗi.
+            return {**self.neutral(directive, f"wikimedia: {type(exc).__name__}"), "fromCache": False}
+        if image is None:
+            result = self.neutral(directive, "wikimedia: không có ảnh đạt chuẩn")
+        else:
+            result = {**base, "source": "wikimedia", "imageUrl": image.thumb_url, "author": image.artist,
+                      "license": image.license, "licenseUrl": image.license_url, "sourceUrl": image.page_url,
+                      "fileTitle": image.title, "width": image.width, "height": image.height, "mime": image.mime}
+        self._memo[memo_key] = result
+        return {**result, "fromCache": False}

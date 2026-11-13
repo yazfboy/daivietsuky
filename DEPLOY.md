@@ -33,16 +33,37 @@ Trang chạy tại **https://yazfboy.github.io/daivietsuky/**. Khi chưa cấu h
 
 Deploy backend lên một host, đặt 5 key làm **biến môi trường bí mật** (không commit):
 
-**Render** (có sẵn `render.yaml` + `Dockerfile`):
+**Render** (có sẵn `render.yaml`: build `pip install -r backend/requirements.txt`, start `uvicorn backend.main:app`):
 1. https://dashboard.render.com → New → Blueprint → chọn repo `yazfboy/daivietsuky`.
-2. Environment → `GEMINI_API_KEYS` = `key1,key2,key3,key4,key5` (bí mật).
-3. Deploy → nhận URL, ví dụ `https://daivietsuky-backend.onrender.com`.
+2. Environment → khai báo biến bí mật `GEMINI_API_KEYS` (5 key, cách nhau dấu phẩy). Không ghi giá trị vào file nào.
+3. Deploy → URL dự kiến `https://daivietsuky-backend.onrender.com` (đã đặt sẵn trong `frontend/.env.production`).
+4. Trước buổi demo mở `https://<url>/health` để đánh thức server (gói free ngủ sau ~15 phút).
+
+Trên Render (biến `RENDER=true` do Render tự đặt), backend chỉ nhận CORS / WebSocket từ `https://yazfboy.github.io`.
 
 **Hugging Face Space (Docker)** cũng dùng chung `Dockerfile`; đặt 5 key trong **Settings → Variables and secrets** (`GEMINI_API_KEYS`).
 
-Rồi trỏ frontend tới backend đó:
-- repo → **Settings → Secrets and variables → Actions → Variables** → thêm `VITE_API_BASE_URL` = URL backend.
-- Chạy lại workflow (**Actions → Deploy frontend to GitHub Pages → Run workflow**).
+Frontend build production (`npm run build`) đọc `VITE_API_BASE_URL` từ `frontend/.env.production`. Nếu Render cấp URL khác:
+- sửa file đó, hoặc repo → **Settings → Secrets and variables → Actions → Variables** → `VITE_API_BASE_URL` = URL backend;
+- chạy lại workflow (**Actions → Deploy frontend to GitHub Pages → Run workflow**).
+
+⚠️ Chỉ merge vào `main` sau khi backend Render đã chạy: workflow sẽ build bản trỏ về Render; backend chưa có thì trang chờ
+4 giây rồi mới tự chuyển sang engine trong trình duyệt.
+
+## 4. Ảnh nền theo bối cảnh
+
+Thứ tự: **thư viện dựng sẵn** (`backend/data/scene_library.json` + ảnh `frontend/public/assets/scenes/{key}.jpg`) →
+**Wikimedia Commons** (chỉ jpg/png khổ ngang ≥ 800px, tỷ lệ ≥ 1.2, giấy phép tự do, loại bản đồ/sơ đồ/quốc huy/cờ/logo,
+ghi tác giả + giấy phép + link gốc) → **phông trung tính** (giấy dó + tên địa danh). Một mục thư viện chỉ được dùng khi
+nhóm đã đặt file ảnh và điền đủ `author` + `license`.
+
+## 5. Kiểm thử
+
+```bash
+python tests/test_history_rules.py      # cố định, không gọi API
+python tests/test_live_director.py      # gọi Gemini + Wikimedia thật
+python tests/scan_secrets.py            # build production rồi quét key trong file Git, lịch sử commit, frontend/dist
+```
 
 Xong: https://yazfboy.github.io/daivietsuky/ gọi Gemini thật, key nằm an toàn ở server.
 

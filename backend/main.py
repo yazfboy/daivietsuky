@@ -7,10 +7,12 @@ Luồng một lượt hỏi–đáp (WebSocket ``/ws/chat/{character_id}`` hoặ
    * ``speech``  — ActorAgent stream từng cụm chữ xuống GlassChatBox; kèm khẩu hình ``visemes`` (TextToVisemeDPSync —
      Viterbi DP 60 FPS) khi ``mouthSyncEnabled``; cụm cuối ``is_final = True`` → miệng dừng ngay.
    * ``scene`` (phase ``final``) — DirectorAgent.direct(): AI Đạo diễn chốt ``sceneMode`` / ``mouthSyncEnabled`` / hậu cảnh.
-3. ``storyboard`` — DP chia lời thoại thành phân cảnh (dp_scene_segmentation) + AI Đạo diễn viết beat cho từng cảnh.
-4. ``visual``  — ConsistentHeroAnimationEngine (visual_pipeline): cảnh động 60 FPS theo chỉ thị, DP Cache đĩa O(1);
-   model anh hùng gốc ``/assets/heroes/{id}.png`` giữ nguyên, chỉ đổi hành động.
+3. ``backdrop`` — ảnh nền theo ``context_topic_key``: thư viện dựng sẵn → Wikimedia Commons (lọc nghiêm ngặt, ghi
+   tác giả / giấy phép / link gốc) → phông trung tính. Bản này không dùng GPU tạo ảnh live.
+4. ``storyboard`` — DP chia lời thoại thành phân cảnh (dp_scene_segmentation) + AI Đạo diễn viết beat cho từng cảnh.
 5. ``done`` → ``turn_end``.
+
+Backend KHÔNG giữ trạng thái phiên: frontend gửi kèm ``previousContextTopicKey`` (mã bối cảnh lượt trước) mỗi request.
 
 Mọi lệnh gọi ra ngoài (Gemini, Hugging Face, Wikimedia) có timeout cứng ``EXTERNAL_TIMEOUT_S`` ≤ 8 giây.
 Chạy: ``python -m uvicorn backend.main:app --port 8000`` (từ thư mục gốc dự án) hoặc ``python run_project.py``.
@@ -52,9 +54,12 @@ from backend.agents.actor_agent import (
     get_character,
 )
 from backend.agents.director_agent import DirectorAgent, SceneDirective, Storyboard, TurnSummary
-from backend.core.dp_optimizer import SCENE_FOREGROUND_TALKING, normalize_text
+from backend.agents.history_rules import ERA_BOUNDARY_OPENING, clean_topic_key, detect_era_boundary
+from backend.core.dp_optimizer import normalize_text
 from backend.core.key_pool import DEFAULT_ENV_PATH, GeminiKeyPool, key_fingerprint, load_api_keys
+from backend.core.scene_library import SceneLibrary
 from backend.engine.visual_pipeline import (
+    BackdropResolver,
     ConsistentHeroAnimationEngine,
     DiskDPCache,
     DirectorVision,
@@ -63,6 +68,7 @@ from backend.engine.visual_pipeline import (
     HuggingFaceImageSource,
     MouthAndActionController,
     TextToVisemeDPSync,
+    WikimediaBackdropFinder,
     WikimediaCommonsSource,
 )
 
@@ -73,15 +79,25 @@ HEROES_DIR = ASSETS_DIR / "heroes"
 
 EXTERNAL_TIMEOUT_S = 8.0  # trần cứng cho mọi lệnh gọi ra ngoài
 REQUEST_TIMEOUT_S = 7.0  # mỗi lần gọi Gemini (byte đầu / giữa hai cụm stream); failover trong EXTERNAL_TIMEOUT_S
-VISUAL_WAIT_S = EXTERNAL_TIMEOUT_S  # chờ cảnh động tối đa trong một lượt; quá hạn thì tiếp tục nền & lưu DP cache
+BACKDROP_WAIT_S = EXTERNAL_TIMEOUT_S  # chờ ảnh nền (thư viện / Wikimedia) tối đa trong một lượt
 # Thứ tự model của AI Nhân vật cho máy chủ: model ổn định (~1–2 s) trước, model hay quá tải (503/treo) làm dự phòng.
 ACTOR_MODELS: tuple[str, ...] = ("gemini-3-flash-preview", "gemini-3.5-flash", "gemini-3.5-flash-lite")
-FRONTEND_ORIGINS = (
+PRODUCTION_ORIGINS = ("https://yazfboy.github.io",)
+DEV_ORIGINS = (
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:4173",
     "http://127.0.0.1:4173",
 )
+# Render tự đặt biến RENDER=true → production chỉ nhận GitHub Pages; chạy ở máy thì nhận thêm localhost.
+IS_PRODUCTION = os.environ.get("RENDER", "").strip().lower() in ("1", "true", "yes")
+ALLOWED_ORIGINS = PRODUCTION_ORIGINS if IS_PRODUCTION else PRODUCTION_ORIGINS + DEV_ORIGINS
+# Khi dev ở máy: nhận mọi cổng localhost / 127.0.0.1 (Vite có thể tự đổi cổng); production thì không.
+DEV_ORIGIN_REGEX = None if IS_PRODUCTION else r"^http://(localhost|127\.0\.0\.1)(:\d{1,5})?$"
+
+
+def origin_allowed(origin: str) -> bool:
+    return origin in ALLOWED_ORIGINS or (DEV_ORIGIN_REGEX is not None and re.fullmatch(DEV_ORIGIN_REGEX, origin) is not None)
 
 log = logging.getLogger("dai_viet_su_ky")
 
@@ -139,10 +155,10 @@ class Services:
     director: DirectorAgent
     engine: ConsistentHeroAnimationEngine
     viseme_sync: TextToVisemeDPSync
+    backdrops: BackdropResolver
     key_fingerprints: tuple[str, ...]
     heroes: dict[str, HeroAsset] = field(default_factory=dict)
     hero_hashes: dict[str, str] = field(default_factory=dict)
-    visual_tasks: dict[str, asyncio.Task[dict[str, Any]]] = field(default_factory=dict)
 
     @classmethod
     def create(cls) -> "Services":
@@ -157,12 +173,15 @@ class Services:
         controller = MouthAndActionController()
         engine = ConsistentHeroAnimationEngine(pool, cache=cache, hf_source=hf, wikimedia=wikimedia, vision=vision,
                                                initializer=initializer, controller=controller)
+        library = SceneLibrary.load()
         return cls(
             pool=pool,
             actor=ActorAgent(pool, models=ACTOR_MODELS, request_timeout_s=REQUEST_TIMEOUT_S),
-            director=DirectorAgent(pool, request_timeout_s=REQUEST_TIMEOUT_S),
+            director=DirectorAgent(pool, request_timeout_s=REQUEST_TIMEOUT_S, library=library),
             engine=engine,
             viseme_sync=controller.sync,
+            backdrops=BackdropResolver(library, WikimediaBackdropFinder(cache, timeout_s=EXTERNAL_TIMEOUT_S),
+                                       timeout_s=EXTERNAL_TIMEOUT_S),
             key_fingerprints=tuple(key_fingerprint(key) for key in keys),
         )
 
@@ -176,9 +195,6 @@ class Services:
         self.heroes = await self.engine.ensure_heroes()
 
     async def close(self) -> None:
-        for task in list(self.visual_tasks.values()):
-            task.cancel()
-        await asyncio.gather(*self.visual_tasks.values(), return_exceptions=True)
         self.engine.close()
         self.pool.close()
 
@@ -210,7 +226,6 @@ def hero_summary(services: Services, profile: CharacterProfile) -> dict[str, Any
 
 def scene_payload(services: Services, directive: SceneDirective, phase: str) -> dict[str, Any]:
     profile = get_character(directive.character_id)
-    event = profile.event(directive.context_key)
     asset = services.heroes.get(profile.character_id)
     rig_path = asset.rig_path if asset else HEROES_DIR / f"{profile.character_id}.rig.json"
     meta_path = asset.meta_path if asset else HEROES_DIR / f"{profile.character_id}.meta.json"
@@ -223,8 +238,14 @@ def scene_payload(services: Services, directive: SceneDirective, phase: str) -> 
         "characterReferencePath": directive.character_reference_path,
         "backgroundType": directive.background_type,
         "contextKey": directive.context_key,
-        "contextTitle": event.name if event else profile.homeland,
-        "contextYear": event.year if event else profile.era,
+        "contextTopicKey": directive.context_topic_key,
+        "previousContextTopicKey": directive.previous_context_topic_key,
+        "topicChanged": directive.topic_changed,
+        "topicKind": directive.topic_kind,
+        "questionKind": directive.question_kind,
+        "beyondEra": directive.beyond_era,
+        "contextTitle": directive.topic_title,
+        "contextYear": directive.topic_year,
         "backgroundPrompt": directive.background_prompt,
         "characterAction": directive.character_action,
         "scenePrompt": directive.scene_prompt,
@@ -278,6 +299,14 @@ def fallback_answer(director: DirectorAgent, profile: CharacterProfile, question
     fingerprint = director.analyze(profile.character_id, question)
     event = next((profile.event(eid) for eid in fingerprint.entities if profile.event(eid) is not None), None)
     pronoun = profile.self_pronoun.capitalize()
+    boundary = detect_era_boundary(profile.character_id, question)
+    if boundary is not None:  # Luật 2 vẫn áp dụng cả khi AI Nhân vật không phản hồi
+        return (
+            f"{ERA_BOUNDARY_OPENING} Sinh thời {profile.self_pronoun} chưa từng nghe tới {boundary.label}; "
+            f"điều ấy {profile.self_pronoun} chỉ nghe hậu thế kể lại, nên không dám nói điều chưa tường. "
+            f"{pronoun} xin kể với {profile.listener_address} những việc {profile.self_pronoun} đã trải qua. "
+            f"{profile.key_facts[0]}"
+        )
     if event is not None:
         return f"{event.name} ({event.year}). {event.summary}"
     text = normalize_text(question)
@@ -293,43 +322,21 @@ def fallback_answer(director: DirectorAgent, profile: CharacterProfile, question
 # ======================================================================================
 # Một lượt hỏi–đáp
 # ======================================================================================
-async def build_visual(services: Services, directive: SceneDirective) -> dict[str, Any]:
-    scene = await services.engine.prepare_scene(directive)
-    update: dict[str, Any] = {
-        "stateId": directive.state_id,
-        "sceneKey": scene.scene_key,
-        "backgroundSource": scene.background_source,
-        "fromCache": scene.from_cache,
-        "fps": scene.fps,
-        "frameCount": scene.frame_count,
-        "backgroundPngUrl": public_url(scene.background_png),
-    }
-    # Cảnh hành động đã ghép sẵn nhân vật vào WebP → frontend chỉ lấy nền (nhân vật gốc do WebGL rig dựng).
-    if directive.scene_mode == SCENE_FOREGROUND_TALKING:
-        update["animationWebpUrl"] = public_url(scene.animation_webp)
-    return update
+def clean_previous_key(value: Any) -> str | None:
+    """Mã lượt trước do frontend gửi lên là dữ liệu không tin cậy: chỉ nhận đúng chuẩn ``^[a-z0-9_]+$``."""
+    key = clean_topic_key(value) if isinstance(value, str) and len(value) <= 64 else ""
+    return key or None
 
 
-def visual_task(services: Services, directive: SceneDirective) -> asyncio.Task[dict[str, Any]]:
-    key = services.engine.scene_key(directive)
-    task = services.visual_tasks.get(key)
-    if task is None or (task.done() and (task.cancelled() or task.exception() is not None)):
-        task = asyncio.create_task(build_visual(services, directive), name=f"visual:{key[-8:]}")
-        services.visual_tasks[key] = task
-
-        def _forget(done: asyncio.Task[dict[str, Any]], key: str = key) -> None:
-            if not done.cancelled():
-                done.exception()  # đánh dấu đã đọc lỗi (tránh cảnh báo "never retrieved")
-            if services.visual_tasks.get(key) is done and (done.cancelled() or done.exception() is not None):
-                services.visual_tasks.pop(key, None)
-
-        task.add_done_callback(_forget)
-    return task
-
-
-async def run_turn(services: Services, character_id: str, question: str) -> AsyncIterator[dict[str, Any]]:
+async def run_turn(
+    services: Services,
+    character_id: str,
+    question: str,
+    previous_context_topic_key: str | None = None,
+) -> AsyncIterator[dict[str, Any]]:
     """Sinh chuỗi sự kiện JSON cho một lượt hỏi–đáp (dùng chung cho WebSocket và SSE)."""
     profile = get_character(character_id)
+    previous = clean_previous_key(previous_context_topic_key)
     cleaned = " ".join(str(question or "").split())
     if not cleaned:
         yield {"type": "error", "agent": "server", "error": "Câu hỏi không được để trống."}
@@ -340,16 +347,25 @@ async def run_turn(services: Services, character_id: str, question: str) -> Asyn
     def now_ms() -> float:
         return round((time.perf_counter() - started) * 1000.0, 1)
 
-    preview = services.director.preview(profile.character_id, cleaned)
+    preview = services.director.preview(profile.character_id, cleaned, previous)
     current: dict[str, SceneDirective] = {"directive": preview}
     yield {"type": "turn_start", "characterId": profile.character_id, "question": cleaned, "t_ms": now_ms()}
     yield {"type": "scene", "t_ms": now_ms(), "sceneData": scene_payload(services, preview, "preview")}
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     spoken: list[str] = []
-    state = {"final_sent": False, "visual_started": False}
-    visual: dict[str, asyncio.Task[dict[str, Any]]] = {}
-    visual_deadline: list[float] = []
+    state = {"final_sent": False}
+    backdrop: dict[str, asyncio.Task[dict[str, Any]]] = {}
+    backdrop_deadline: list[float] = []
+    backdrop_sent: list[bool] = []
+
+    async def send_backdrop(directive: SceneDirective) -> None:
+        try:
+            result = await services.backdrops.resolve(directive)
+        except Exception as exc:  # không bao giờ để lượt treo vì ảnh nền
+            result = services.backdrops.neutral(directive, f"{type(exc).__name__}")
+        backdrop_sent.append(True)
+        await queue.put({"type": "backdrop", "t_ms": now_ms(), "stateId": directive.state_id, "backdrop": result})
 
     async def emit_chunk(chunk: SpeechChunk, source: str) -> None:
         spoken.append(chunk.text)
@@ -367,16 +383,17 @@ async def run_turn(services: Services, character_id: str, question: str) -> Asyn
 
     async def pump() -> None:
         try:
-            async for event in services.director.run_scene(services.actor, profile.character_id, cleaned):
+            async for event in services.director.run_scene(
+                services.actor, profile.character_id, cleaned, previous_context_topic_key=previous
+            ):
                 if event.kind == "scene":
                     directive: SceneDirective = event.data
                     current["directive"] = directive
                     await queue.put({"type": "scene", "t_ms": now_ms(),
                                      "sceneData": scene_payload(services, directive, "final")})
-                    if not state["visual_started"]:
-                        state["visual_started"] = True
-                        visual["task"] = visual_task(services, directive)
-                        visual_deadline.append(asyncio.get_running_loop().time() + VISUAL_WAIT_S)
+                    if "task" not in backdrop:
+                        backdrop["task"] = asyncio.create_task(send_backdrop(directive), name="backdrop")
+                        backdrop_deadline.append(asyncio.get_running_loop().time() + BACKDROP_WAIT_S)
                 elif event.kind == "speech":
                     await emit_chunk(event.data, "gemini")
                 elif event.kind == "storyboard":
@@ -397,6 +414,7 @@ async def run_turn(services: Services, character_id: str, question: str) -> Asyn
                         "answer": "".join(spoken),
                         "sceneMode": directive.scene_mode,
                         "mouthSyncEnabled": directive.mouth_sync_enabled,
+                        "contextTopicKey": directive.context_topic_key,
                         "directorDecidedBy": directive.decided_by,
                         "actorModel": summary.actor_model,
                         "actorKey": summary.actor_key_label,
@@ -410,6 +428,18 @@ async def run_turn(services: Services, character_id: str, question: str) -> Asyn
             if not state["final_sent"]:
                 await emit_fallback()
         finally:
+            task = backdrop.get("task")
+            if task is None:  # AI Đạo diễn không chốt được cảnh → ảnh nền theo bản xem trước
+                task = asyncio.create_task(send_backdrop(current["directive"]), name="backdrop")
+                backdrop_deadline.append(asyncio.get_running_loop().time() + BACKDROP_WAIT_S)
+            if task is not None:
+                remaining = max(0.0, backdrop_deadline[0] - asyncio.get_running_loop().time())
+                await asyncio.wait({task}, timeout=remaining)
+                if not backdrop_sent:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                    await queue.put({"type": "backdrop", "t_ms": now_ms(), "stateId": current["directive"].state_id,
+                                     "backdrop": services.backdrops.neutral(current["directive"], "timeout")})
             await queue.put(None)
 
     pump_task = asyncio.create_task(pump(), name=f"turn:{profile.character_id}")
@@ -419,19 +449,6 @@ async def run_turn(services: Services, character_id: str, question: str) -> Asyn
             if item is None:
                 break
             yield item
-        task = visual.get("task")
-        if task is not None:
-            remaining = max(0.0, visual_deadline[0] - asyncio.get_running_loop().time())
-            done, _ = await asyncio.wait({task}, timeout=remaining)
-            if not done:
-                yield {"type": "visual", "t_ms": now_ms(), "status": "rendering",
-                       "detail": "Cảnh động đang được dựng nền; lần hỏi sau cùng bối cảnh sẽ lấy lại O(1) từ DP Cache."}
-            elif task.cancelled() or task.exception() is not None:
-                error = "cancelled" if task.cancelled() else f"{type(task.exception()).__name__}: {task.exception()}"
-                yield {"type": "visual", "t_ms": now_ms(), "status": "unavailable", "detail": error[:300],
-                       "fallback": "procedural_60fps"}
-            else:
-                yield {"type": "visual", "t_ms": now_ms(), "status": "ready", "sceneData": task.result()}
         yield {"type": "turn_end", "t_ms": now_ms()}
     finally:
         if not pump_task.done():
@@ -457,10 +474,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Đại Việt Sử Ký API", version="4.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(FRONTEND_ORIGINS),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=list(ALLOWED_ORIGINS),
+    allow_origin_regex=DEV_ORIGIN_REGEX,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 # Ảnh mẫu anh hùng, rig, cảnh động do visual_pipeline sinh ra (frontend/public/assets/...).
 app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
@@ -474,8 +492,15 @@ def services_of(app_or_ws: FastAPI | WebSocket) -> Services:
 class ChatRequest(BaseModel):
     character_id: str = Field(..., alias="characterId")
     question: str = Field(..., min_length=1, max_length=2000)
+    previous_context_topic_key: str | None = Field(default=None, alias="previousContextTopicKey", max_length=64)
 
     model_config = {"populate_by_name": True}
+
+
+@app.get("/health")
+async def wake() -> dict[str, str]:
+    """Trả ngay, không gọi Gemini — dùng để đánh thức server (Render free) trước buổi demo."""
+    return {"status": "ok"}
 
 
 @app.get("/api/health")
@@ -516,7 +541,8 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
     services = services_of(app)
 
     async def body() -> AsyncIterator[bytes]:
-        async for event in run_turn(services, profile.character_id, request.question):
+        async for event in run_turn(services, profile.character_id, request.question,
+                                    request.previous_context_topic_key):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode("utf-8")
 
     return StreamingResponse(body(), media_type="text/event-stream",
@@ -526,6 +552,10 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 @app.websocket("/ws/chat/{character_id}")
 async def chat_socket(websocket: WebSocket, character_id: str) -> None:
     """WebSocket: client gửi ``{"question": "..."}``; server đẩy các sự kiện của lượt rồi ``turn_end``."""
+    origin = websocket.headers.get("origin")
+    if origin is not None and not origin_allowed(origin):  # CORSMiddleware không áp cho WebSocket
+        await websocket.close(code=4403)
+        return
     try:
         profile = get_character(character_id)
     except UnsupportedCharacterError:
@@ -537,7 +567,8 @@ async def chat_socket(websocket: WebSocket, character_id: str) -> None:
         while True:
             message = await websocket.receive_json()
             question = str(message.get("question", "")) if isinstance(message, dict) else ""
-            async for event in run_turn(services, profile.character_id, question):
+            previous = message.get("previousContextTopicKey") if isinstance(message, dict) else None
+            async for event in run_turn(services, profile.character_id, question[:2000], previous):
                 await websocket.send_json(event)
     except WebSocketDisconnect:
         return

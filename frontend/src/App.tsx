@@ -89,6 +89,12 @@ export const App: React.FC = () => {
   const [streamChunk, setStreamChunk] = useState<SpeechChunkData | null>(null);
 
   const turnRef = useRef<ChatTurnHandle | null>(null);
+  // Mã bối cảnh (context_topic_key) của lượt trước, theo từng nhân vật — gửi kèm mỗi request; backend không giữ state.
+  const topicKeyRef = useRef<Record<HeroId, string | null>>({
+    tran_hung_dao: null,
+    nguyen_trai: null,
+    quang_trung: null,
+  });
 
   const stopActiveStream = useCallback(() => {
     if (streamTimerRef.current !== null) {
@@ -296,14 +302,18 @@ export const App: React.FC = () => {
       const handle = openChatTurn(
         heroId,
         questionText,
+        topicKeyRef.current[heroId],
         (event: BackendEvent) => {
           switch (event.type) {
             case 'scene': {
               const data = event.sceneData;
               const isHomeland = data.contextKey === 'homeland';
+              if (data.phase === 'final' && data.contextTopicKey) topicKeyRef.current[heroId] = data.contextTopicKey;
               setSceneByHero((prev) => {
                 const before = prev[heroId];
                 const sameState = before.stateId === data.stateId;
+                // Cùng mã bối cảnh → giữ ảnh nền đang hiện; đổi mã → phông trung tính chờ ảnh mới.
+                const sameTopic = before.backdrop?.contextTopicKey === data.contextTopicKey;
                 return {
                   ...prev,
                   [heroId]: {
@@ -327,6 +337,16 @@ export const App: React.FC = () => {
                     beats: sameState ? before.beats : undefined,
                     animationWebpUrl: sameState ? before.animationWebpUrl : undefined,
                     backgroundPngUrl: sameState ? before.backgroundPngUrl : undefined,
+                    contextTopicKey: data.contextTopicKey,
+                    backdrop:
+                      sameTopic && before.backdrop
+                        ? before.backdrop
+                        : {
+                            source: 'neutral',
+                            contextTopicKey: data.contextTopicKey,
+                            title: data.contextTitle,
+                            subtitle: data.contextYear,
+                          },
                   },
                 };
               });
@@ -347,6 +367,21 @@ export const App: React.FC = () => {
               setSceneByHero((prev) =>
                 prev[heroId].stateId === board.stateId
                   ? { ...prev, [heroId]: { ...prev[heroId], beats: board.beats } }
+                  : prev
+              );
+              break;
+            }
+            case 'backdrop': {
+              const info = event.backdrop;
+              setSceneByHero((prev) =>
+                prev[heroId].contextTopicKey === info.contextTopicKey
+                  ? {
+                      ...prev,
+                      [heroId]: {
+                        ...prev[heroId],
+                        backdrop: { ...info, imageUrl: resolveMediaUrl(info.imageUrl) },
+                      },
+                    }
                   : prev
               );
               break;
@@ -431,6 +466,7 @@ export const App: React.FC = () => {
   const handleResetChat = useCallback(() => {
     stopActiveStream();
     const hero = HEROES[selectedHeroId];
+    topicKeyRef.current[selectedHeroId] = null;
     setMessagesByHero((prev) => ({
       ...prev,
       [selectedHeroId]: [createInitialGreetingMessage(selectedHeroId)],

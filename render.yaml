@@ -1,19 +1,25 @@
-# Render Blueprint — deploy backend Đại Việt Sử Ký (FastAPI + WebSocket) chỉ với vài cú bấm.
+# Render Blueprint — backend Đại Việt Sử Ký (FastAPI + WebSocket). CHƯA deploy; dùng khi nhóm duyệt xong.
 # Cách dùng:
-#   1. Vào https://dashboard.render.com → New → Blueprint → chọn repo yazfboy/daivietsuky.
-#   2. Render đọc file này, tạo một Web Service chạy Docker.
-#   3. Ở mục Environment, dán 5 key vào biến BÍ MẬT GEMINI_API_KEYS (phân tách bằng dấu phẩy). KHÔNG commit key.
-#   4. Deploy xong sẽ có URL dạng https://daivietsuky.onrender.com → đặt URL này vào biến VITE_API_BASE_URL
-#      của GitHub Pages (repo → Settings → Secrets and variables → Actions → Variables) rồi chạy lại workflow deploy.
+#   1. https://dashboard.render.com → New → Blueprint → chọn repo yazfboy/daivietsuky.
+#   2. Ở mục Environment, khai báo các biến dưới đây (giá trị nhập tay trên dashboard, KHÔNG ghi vào file / Git).
+#   3. Deploy xong có URL dạng https://daivietsuky-backend.onrender.com — trùng với VITE_API_BASE_URL trong
+#      frontend/.env.production. Nếu Render cấp URL khác, sửa file đó (hoặc đặt biến VITE_API_BASE_URL trong
+#      repo → Settings → Secrets and variables → Actions → Variables) rồi build lại frontend.
+#   4. Trước buổi demo, mở https://<url>/health để đánh thức server (gói free ngủ sau ~15 phút không dùng).
+#
+# Biến môi trường cần khai báo (chỉ TÊN, không ghi giá trị):
+#   - GEMINI_API_KEYS   : 5 key Google AI Studio, phân tách bằng dấu phẩy (bí mật).
+#     (hoặc thay bằng GEMINI_KEY_1 … GEMINI_KEY_5)
+# Render tự đặt biến RENDER=true → backend chỉ nhận CORS / WebSocket từ https://yazfboy.github.io.
+# Phiên bản Python lấy từ file .python-version ở gốc repo.
 services:
   - type: web
     name: daivietsuky-backend
-    runtime: docker
+    runtime: python
     plan: free
-    dockerfilePath: ./Dockerfile
-    healthCheckPath: /api/health
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
       - key: GEMINI_API_KEYS
-        sync: false   # nhập thủ công trên dashboard (bí mật) — 5 key cách nhau bởi dấu phẩy
-      - key: PYTHONUNBUFFERED
-        value: "1"
+        sync: false

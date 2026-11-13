@@ -3,6 +3,7 @@
 .env
 .env.*
 !.env.example
+!frontend/.env.production
 *.key
 secrets.*
 
@@ -19,7 +20,7 @@ env/
 backend/.cache/
 
 # Cảnh động do visual_pipeline sinh ra lúc chạy (không phải mã nguồn)
-frontend/public/assets/scenes/
+frontend/public/assets/scenes/*/
 frontend/public/assets/renders/
 
 # ───────────────────────── Node / frontend ─────────────────────────

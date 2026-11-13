@@ -1,4 +1,5 @@
 import {
+  BackdropInfo,
   BackgroundType,
   HeroId,
   HeroMetaData,
@@ -22,6 +23,10 @@ export interface BackendSceneData {
   characterReferencePath: string;
   backgroundType: BackgroundType;
   contextKey: string;
+  contextTopicKey: string;
+  previousContextTopicKey: string | null;
+  topicChanged: boolean;
+  beyondEra: boolean;
   contextTitle: string;
   contextYear: string;
   backgroundPrompt: string;
@@ -48,6 +53,7 @@ export type BackendEvent =
   | { type: 'speech'; t_ms: number; chunk: SpeechChunkData }
   | { type: 'storyboard'; t_ms: number; storyboard: { stateId: string; sceneMode: SceneMode; beats: SceneBeatData[] } }
   | { type: 'visual'; t_ms: number; status: 'ready' | 'rendering' | 'unavailable'; sceneData?: BackendVisualData; detail?: string }
+  | { type: 'backdrop'; t_ms: number; stateId: string; backdrop: BackdropInfo }
   | { type: 'error'; t_ms: number; agent?: string; error: string }
   | {
       type: 'done';
@@ -103,6 +109,7 @@ function socketUrl(characterId: HeroId): string {
 export function openChatTurn(
   characterId: HeroId,
   question: string,
+  previousContextTopicKey: string | null,
   onEvent: (event: BackendEvent) => void,
   onFailure: (receivedAny: boolean) => void,
 ): ChatTurnHandle {
@@ -139,7 +146,8 @@ export function openChatTurn(
 
   socket.onopen = () => {
     window.clearTimeout(connectTimer);
-    socket?.send(JSON.stringify({ question }));
+    // Backend không giữ trạng thái phiên: mỗi lượt gửi kèm mã bối cảnh của lượt trước (nếu có).
+    socket?.send(JSON.stringify({ question, previousContextTopicKey }));
   };
   socket.onmessage = (message: MessageEvent<string>) => {
     if (settled) return;

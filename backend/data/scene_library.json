@@ -1,0 +1,370 @@
+{
+  "_note": "Thư viện cảnh dựng sẵn — key (context_topic_key) → ảnh nền + ghi nguồn. Nhóm tự chọn & duyệt ảnh, đặt file vào frontend/public/assets/scenes/{key}.jpg rồi điền image/author/license/source_url. Mục nào thiếu ảnh hoặc thiếu tác giả/giấy phép thì bị bỏ qua: hệ thống tìm Wikimedia Commons, không được thì dùng phông trung tính.",
+  "version": 1,
+  "scenes": {
+    "bach_dang_1288": {
+      "title": "Trận Bạch Đằng",
+      "year": "1288",
+      "kind": "battle",
+      "hero_id": null,
+      "aliases": [
+        "bach_dang",
+        "bach_dang_giang",
+        "song_bach_dang",
+        "tran_bach_dang",
+        "bach_dang_hai_khau"
+      ],
+      "wikimedia_search_query": "Bach Dang River Quang Ninh",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "khang_chien_mong_nguyen_1285": {
+      "title": "Kháng chiến chống Nguyên Mông lần thứ hai",
+      "year": "1285",
+      "kind": "battle",
+      "hero_id": null,
+      "aliases": [
+        "khang_chien_lan_hai",
+        "khang_chien_mong_nguyen_lan_2"
+      ],
+      "wikimedia_search_query": "Kiep Bac temple Chi Linh",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "khang_chien_mong_nguyen_1287_1288": {
+      "title": "Kháng chiến chống Nguyên Mông lần thứ ba",
+      "year": "1287–1288",
+      "kind": "battle",
+      "hero_id": null,
+      "aliases": [
+        "khang_chien_mong_nguyen",
+        "khang_chien_chong_nguyen_mong",
+        "khang_chien_lan_ba",
+        "khang_chien_mong_nguyen_1288"
+      ],
+      "wikimedia_search_query": "Bach Dang River Quang Ninh",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "van_don_1288": {
+      "title": "Trận Vân Đồn",
+      "year": "1288",
+      "kind": "battle",
+      "hero_id": null,
+      "aliases": [
+        "van_don"
+      ],
+      "wikimedia_search_query": "Van Don Quang Ninh bay",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "chuong_duong_ham_tu_1285": {
+      "title": "Trận Chương Dương – Hàm Tử",
+      "year": "1285",
+      "kind": "battle",
+      "hero_id": null,
+      "aliases": [
+        "chuong_duong",
+        "ham_tu",
+        "chuong_duong_ham_tu"
+      ],
+      "wikimedia_search_query": "Red River Hanoi",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "hich_tuong_si": {
+      "title": "Hịch tướng sĩ",
+      "year": "1284",
+      "kind": "event",
+      "hero_id": null,
+      "aliases": [
+        "hich_tuong_si_1284"
+      ],
+      "wikimedia_search_query": "Kiep Bac temple Chi Linh",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "dien_hong_1284": {
+      "title": "Hội nghị Diên Hồng",
+      "year": "1284",
+      "kind": "event",
+      "hero_id": null,
+      "aliases": [
+        "dien_hong",
+        "hoi_nghi_dien_hong"
+      ],
+      "wikimedia_search_query": "Tran Temple Nam Dinh",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "chi_lang_xuong_giang_1427": {
+      "title": "Chiến thắng Chi Lăng – Xương Giang",
+      "year": "1427",
+      "kind": "battle",
+      "hero_id": null,
+      "aliases": [
+        "chi_lang",
+        "xuong_giang",
+        "chi_lang_xuong_giang"
+      ],
+      "wikimedia_search_query": "Chi Lang Lang Son",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "tot_dong_chuc_dong_1426": {
+      "title": "Trận Tốt Động – Chúc Động",
+      "year": "1426",
+      "kind": "battle",
+      "hero_id": null,
+      "aliases": [
+        "tot_dong",
+        "chuc_dong",
+        "tot_dong_chuc_dong"
+      ],
+      "wikimedia_search_query": "Chuong My Hanoi countryside",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "dong_quan_hoi_the_1427": {
+      "title": "Hội thề Đông Quan",
+      "year": "1427",
+      "kind": "event",
+      "hero_id": null,
+      "aliases": [
+        "hoi_the_dong_quan"
+      ],
+      "wikimedia_search_query": "Hoan Kiem Lake Hanoi",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "binh_ngo_dai_cao_1428": {
+      "title": "Bình Ngô đại cáo",
+      "year": "1428",
+      "kind": "event",
+      "hero_id": null,
+      "aliases": [
+        "binh_ngo_dai_cao"
+      ],
+      "wikimedia_search_query": "Temple of Literature Hanoi",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "le_chi_vien_1442": {
+      "title": "Vụ án Lệ Chi Viên",
+      "year": "1442",
+      "kind": "event",
+      "hero_id": null,
+      "aliases": [
+        "le_chi_vien"
+      ],
+      "wikimedia_search_query": "Con Son Chi Linh",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "lam_son_khoi_nghia": {
+      "title": "Khởi nghĩa Lam Sơn",
+      "year": "1418–1427",
+      "kind": "battle",
+      "hero_id": null,
+      "aliases": [
+        "khoi_nghia_lam_son",
+        "lam_son"
+      ],
+      "wikimedia_search_query": "Lam Kinh Thanh Hoa",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "rach_gam_xoai_mut_1785": {
+      "title": "Trận Rạch Gầm – Xoài Mút",
+      "year": "1785",
+      "kind": "battle",
+      "hero_id": null,
+      "aliases": [
+        "rach_gam",
+        "xoai_mut",
+        "rach_gam_xoai_mut"
+      ],
+      "wikimedia_search_query": "Tien Giang river Mekong",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "ngoc_hoi_dong_da_1789": {
+      "title": "Trận Ngọc Hồi – Đống Đa",
+      "year": "1789",
+      "kind": "battle",
+      "hero_id": null,
+      "aliases": [
+        "dong_da",
+        "ngoc_hoi",
+        "ngoc_hoi_dong_da",
+        "dong_da_1789",
+        "dai_pha_quan_thanh"
+      ],
+      "wikimedia_search_query": "Dong Da mound Hanoi",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "len_ngoi_nui_ban_1788": {
+      "title": "Lên ngôi ở núi Bân",
+      "year": "1788",
+      "kind": "event",
+      "hero_id": null,
+      "aliases": [
+        "len_ngoi",
+        "nui_ban"
+      ],
+      "wikimedia_search_query": "Hue Imperial City",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "phu_le_diet_trinh_1786": {
+      "title": "Phù Lê diệt Trịnh",
+      "year": "1786",
+      "kind": "event",
+      "hero_id": null,
+      "aliases": [
+        "phu_le_diet_trinh"
+      ],
+      "wikimedia_search_query": "Thang Long Imperial Citadel",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "khoi_nghia_tay_son_1771": {
+      "title": "Khởi nghĩa Tây Sơn",
+      "year": "1771",
+      "kind": "event",
+      "hero_id": null,
+      "aliases": [
+        "khoi_nghia_tay_son"
+      ],
+      "wikimedia_search_query": "Tay Son Binh Dinh",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "que_huong_tuc_mac": {
+      "title": "Quê hương Tức Mặc (Nam Định)",
+      "year": "",
+      "kind": "homeland",
+      "hero_id": "tran_hung_dao",
+      "aliases": [
+        "tuc_mac",
+        "thien_truong",
+        "que_huong_tran_hung_dao"
+      ],
+      "wikimedia_search_query": "Tran Temple Nam Dinh",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "que_huong_nhi_khe": {
+      "title": "Quê hương Nhị Khê – Côn Sơn",
+      "year": "",
+      "kind": "homeland",
+      "hero_id": "nguyen_trai",
+      "aliases": [
+        "nhi_khe",
+        "chi_ngai",
+        "con_son",
+        "que_huong_nguyen_trai"
+      ],
+      "wikimedia_search_query": "Con Son Chi Linh",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "que_huong_tay_son": {
+      "title": "Quê hương Tây Sơn (Bình Định)",
+      "year": "",
+      "kind": "homeland",
+      "hero_id": "quang_trung",
+      "aliases": [
+        "tay_son",
+        "kien_my",
+        "que_huong_quang_trung"
+      ],
+      "wikimedia_search_query": "Tay Son Binh Dinh",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    },
+    "moscow_red_square": {
+      "title": "Mát-xcơ-va (nước Nga)",
+      "year": "",
+      "kind": "place",
+      "hero_id": null,
+      "aliases": [
+        "nuoc_nga",
+        "moscow",
+        "mat_xco_va",
+        "kremlin",
+        "quang_truong_do"
+      ],
+      "wikimedia_search_query": "Red Square Moscow Kremlin",
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": ""
+    }
+  }
+}
