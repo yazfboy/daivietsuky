@@ -48,6 +48,16 @@ def opening(text: str, sentences: int = 2) -> str:
 def backdrop_ok(info: dict) -> tuple[bool, str]:
     if info.get("source") == "neutral":
         return True, f"phông trung tính dự phòng ({info.get('detail', '')})"
+    if info.get("source") == "library":
+        from PIL import Image  # noqa: PLC0415
+        path = ROOT / "frontend" / "public" / str(info.get("imageUrl", "")).lstrip("/")
+        with Image.open(path) as im:
+            width, height = im.size
+            fmt = im.format
+        good = (fmt == "JPEG" and width >= 800 and width / max(1, height) >= 1.2 and bool(info.get("author"))
+                and bool(info.get("license")) and str(info.get("sourceUrl", "")).startswith("https://"))
+        return good, (f"thư viện {info.get('imageUrl')} {width}×{height} · {info.get('author', '')[:40]} · "
+                      f"{info.get('license')} · {info.get('sourceUrl')}")
     good = (info.get("source") == "wikimedia" and info.get("mime") in ("image/jpeg", "image/png")
             and str(info.get("fileTitle", "")).lower().endswith((".jpg", ".jpeg", ".png"))
             and info.get("width", 0) >= 800 and info.get("width", 0) > info.get("height", 0)

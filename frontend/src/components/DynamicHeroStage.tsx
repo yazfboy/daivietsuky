@@ -544,7 +544,9 @@ export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
                 rel="noopener noreferrer"
                 className="underline decoration-zinc-500 hover:text-white"
               >
-                {sceneData.backdrop.source === 'wikimedia' ? 'Wikimedia Commons' : 'Nguồn ảnh'}
+                {safeHttpUrl(sceneData.backdrop.sourceUrl)?.startsWith('https://commons.wikimedia.org/')
+                  ? 'Wikimedia Commons'
+                  : 'Nguồn ảnh'}
               </a>
             </>
           )}

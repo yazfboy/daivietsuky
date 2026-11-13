@@ -269,24 +269,37 @@ async def test_backdrop_fallback() -> None:
         raise AssetSourceError("mô phỏng mất mạng")
 
     library = SceneLibrary.load()
+    EMPTY_KEY = "le_chi_vien_1442"  # có mục trong thư viện nhưng nhóm chưa chọn ảnh
+    check(EMPTY_KEY in library and library.get(EMPTY_KEY).image_file() is None, "Mục thư viện chưa có ảnh dùng để thử")
     ok = BackdropResolver(library, WikimediaBackdropFinder(None, fetch=ok_fetch))
-    result = await ok.resolve(directive("moscow_red_square"))
+    result = await ok.resolve(directive(EMPTY_KEY))
     check(result["source"] == "wikimedia" and result["author"] == "Alex & Co (photo)" and result["sourceUrl"]
           and result["license"] and result["width"] >= 800, "Thư viện chưa có ảnh → lấy Wikimedia, đủ ghi nguồn",
           result.get("fileTitle", ""))
-    again = await ok.resolve(directive("moscow_red_square"))
+    again = await ok.resolve(directive(EMPTY_KEY))
     check(again["fromCache"] and len(calls) == 1, "Gọi lại cùng context_topic_key → cache, không gọi API lần 2")
 
     calls.clear()
     broken = BackdropResolver(library, WikimediaBackdropFinder(None, fetch=broken_fetch))
-    neutral = await broken.resolve(directive("moscow_red_square"))
+    neutral = await broken.resolve(directive(EMPTY_KEY))
     check(neutral["source"] == "neutral" and "imageUrl" not in neutral and neutral["title"] == "Mát-xcơ-va (nước Nga)",
           "Wikimedia lỗi → phông trung tính có tên địa danh (không rơi về ảnh quê hương / cảnh vẽ cũ)")
-    await broken.resolve(directive("moscow_red_square"))
+    await broken.resolve(directive(EMPTY_KEY))
     check(len(calls) == 2, "Lỗi mạng không bị cache (lần sau thử lại)")
 
     empty = BackdropResolver(library, WikimediaBackdropFinder(None, fetch=lambda url: b'{"query": {"pages": {}}}'))
-    check((await empty.resolve(directive("moscow_red_square")))["source"] == "neutral", "Không có ảnh qua lọc → phông trung tính")
+    check((await empty.resolve(directive(EMPTY_KEY)))["source"] == "neutral", "Không có ảnh qua lọc → phông trung tính")
+
+    calls.clear()
+    real = await ok.resolve(directive("moscow_red_square"))
+    check(real["source"] == "library" and real["imageUrl"] == "/assets/scenes/moscow_red_square.jpg" and not calls
+          and real["author"] and real["license"] and real["sourceUrl"].startswith("https://commons.wikimedia.org/"),
+          "Thư viện thật có ảnh (Mát-xcơ-va) → dùng thư viện, đủ ghi nguồn, không gọi Wikimedia",
+          f"{real.get('author')} · {real.get('license')}")
+    usable = [e for e in library.entries() if e.image_file() is not None]
+    check(all(e.author and e.license and e.source_url.startswith("https://commons.wikimedia.org/wiki/File:")
+              and "<" not in e.author for e in usable), "Mọi ảnh thư viện có tác giả (chữ thuần), giấy phép, link gốc",
+          f"{len(usable)} ảnh")
 
     calls.clear()
     off = await ok.resolve(directive("chu_de_chung", allowed=False))
