@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import http.client
+import inspect
 import itertools
 import json
 import os
@@ -99,6 +100,9 @@ _clock = time.perf_counter
 # --------------------------------------------------------------------------------------
 # Lỗi
 # --------------------------------------------------------------------------------------
+_MIN_ATTEMPT_TIMEOUT_S = 0.25
+
+
 class KeyPoolError(Exception):
     """Lỗi gốc của key pool."""
 
@@ -444,6 +448,16 @@ class GeminiTransport(Protocol):
     ) -> Iterator[dict[str, Any]]: ...
 
 
+def _set_socket_timeout(response: Any, seconds: float) -> None:
+    """Đổi timeout đọc của socket sau khi đã nhận header (http.client → BufferedReader → SocketIO → socket)."""
+    sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    if sock is not None:
+        try:
+            sock.settimeout(seconds)
+        except OSError:
+            pass
+
+
 class GeminiRestTransport:
     """Gọi ``generativelanguage.googleapis.com`` bằng thư viện chuẩn (urllib), header ``x-goog-api-key``."""
 
@@ -503,8 +517,14 @@ class GeminiRestTransport:
         payload: Mapping[str, Any],
         timeout_s: float,
         cancel_event: threading.Event,
+        *,
+        read_timeout_s: float | None = None,
     ) -> Iterator[dict[str, Any]]:
+        """``timeout_s``: chờ byte đầu tiên (header về cùng lúc với cụm chữ đầu); ``read_timeout_s``: chờ giữa hai
+        dòng SSE sau khi đã có byte đầu (mặc định = ``timeout_s``)."""
         response = self._open(api_key, model, payload, timeout_s, stream=True)
+        if read_timeout_s is not None and read_timeout_s != timeout_s:
+            _set_socket_timeout(response, read_timeout_s)
         try:
             data_lines: list[str] = []
             while not cancel_event.is_set():
@@ -694,6 +714,7 @@ class _Job:
     request_timeout_s: float
     deadline: float
     max_attempts: int
+    first_byte_timeout_s: float = 0.0
     cancel_event: threading.Event = field(default_factory=threading.Event)
     model_cursor: int = 0
     tried_pairs: set[tuple[int, str]] = field(default_factory=set)
@@ -743,6 +764,7 @@ class GeminiKeyPool:
         model_degrade_s: float = 30.0,
         transport: GeminiTransport | None = None,
         trace_capacity: int = 512,
+        first_byte_timeout_s: float | None = None,
     ) -> None:
         cleaned = [str(k).strip() for k in api_keys if k is not None and str(k).strip()]
         if not cleaned:
@@ -755,6 +777,8 @@ class GeminiKeyPool:
             raise KeyPoolConfigError("burst_per_key và max_inflight_per_key phải >= 1.")
         if request_timeout_s <= 0 or total_deadline_s <= 0 or model_degrade_s < 0:
             raise KeyPoolConfigError("request_timeout_s, total_deadline_s phải > 0 và model_degrade_s >= 0.")
+        if first_byte_timeout_s is not None and first_byte_timeout_s <= 0:
+            raise KeyPoolConfigError("first_byte_timeout_s phải > 0.")
 
         now = _clock()
         self._states: tuple[_KeyState, ...] = tuple(
@@ -776,6 +800,14 @@ class GeminiKeyPool:
         )
         self._request_timeout_s = float(request_timeout_s)
         self._total_deadline_s = float(total_deadline_s)
+        # Stream: chờ byte đầu tối đa first_byte_timeout_s rồi xoay ngay sang key/model khác (model khoẻ ~1–1,5 s).
+        self._first_byte_timeout_s = float(first_byte_timeout_s or request_timeout_s)
+        try:
+            self._stream_read_timeout_kw = "read_timeout_s" in inspect.signature(
+                self._transport.stream_generate_content
+            ).parameters
+        except (TypeError, ValueError):
+            self._stream_read_timeout_kw = False
         self._max_attempts = int(max_attempts) if max_attempts else max(6, 2 * len(cleaned))
         self._rr_cursor = 0
         self._ids = itertools.count(1)
@@ -897,13 +929,15 @@ class GeminiKeyPool:
         avoid_keys: Iterable[int] = (),
         request_timeout_s: float | None = None,
         deadline_s: float | None = None,
+        first_byte_timeout_s: float | None = None,
     ) -> GenerationResult:
         """Gọi ``generateContent`` trên worker thread; tự chọn key và failover.
 
         ``models``: một model hoặc chuỗi model ưu tiên (model sau là dự phòng khi model trước
         quá tải/ngừng cung cấp). ``avoid_keys``: chỉ số key nên tránh nếu còn key khác.
         """
-        job = self._new_job("generate", models, payload, tag, avoid_keys, request_timeout_s, deadline_s)
+        job = self._new_job("generate", models, payload, tag, avoid_keys, request_timeout_s, deadline_s,
+                            first_byte_timeout_s)
         loop = asyncio.get_running_loop()
         try:
             future = loop.run_in_executor(self._executor, self._generate_worker, job)
@@ -924,13 +958,15 @@ class GeminiKeyPool:
         avoid_keys: Iterable[int] = (),
         request_timeout_s: float | None = None,
         deadline_s: float | None = None,
+        first_byte_timeout_s: float | None = None,
     ) -> AsyncIterator[StreamDelta]:
         """Gọi ``streamGenerateContent`` (SSE) trên worker thread, đẩy từng delta về event loop.
 
         Failover chỉ áp dụng trước khi delta đầu tiên được phát; lỗi giữa dòng được ném ra
         với ``partial_output = True``.
         """
-        job = self._new_job("stream", models, payload, tag, avoid_keys, request_timeout_s, deadline_s)
+        job = self._new_job("stream", models, payload, tag, avoid_keys, request_timeout_s, deadline_s,
+                            first_byte_timeout_s)
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
 
@@ -971,6 +1007,7 @@ class GeminiKeyPool:
         avoid_keys: Iterable[int],
         request_timeout_s: float | None,
         deadline_s: float | None,
+        first_byte_timeout_s: float | None = None,
     ) -> _Job:
         if self._closed:
             raise KeyPoolClosedError("Key pool đã đóng.")
@@ -987,7 +1024,13 @@ class GeminiKeyPool:
             request_timeout_s=float(request_timeout_s or self._request_timeout_s),
             deadline=_clock() + float(deadline_s or self._total_deadline_s),
             max_attempts=self._max_attempts,
+            first_byte_timeout_s=float(first_byte_timeout_s or self._first_byte_timeout_s),
         )
+
+    @staticmethod
+    def _attempt_timeout(job: _Job, limit: float) -> float:
+        """Timeout của MỘT lần thử không bao giờ vượt phần còn lại của hạn chót toàn request (≤ deadline)."""
+        return max(_MIN_ATTEMPT_TIMEOUT_S, min(limit, job.deadline - _clock()))
 
     def _generate_worker(self, job: _Job) -> GenerationResult:
         job.thread_name = threading.current_thread().name
@@ -996,7 +1039,7 @@ class GeminiKeyPool:
 
         def attempt(lease: _Lease) -> tuple[dict[str, Any], str, str | None]:
             response = self._transport.generate_content(
-                lease.state.secret, lease.model, job.payload, job.request_timeout_s
+                lease.state.secret, lease.model, job.payload, self._attempt_timeout(job, job.request_timeout_s)
             )
             job.first_byte_at = _clock()
             text, finish_reason, block_reason = extract_candidate_text(response)
@@ -1048,9 +1091,16 @@ class GeminiKeyPool:
         def attempt(lease: _Lease) -> int:
             delivered = 0
             try:
-                events = self._transport.stream_generate_content(
-                    lease.state.secret, lease.model, job.payload, job.request_timeout_s, job.cancel_event
-                )
+                first_byte = self._attempt_timeout(job, min(job.first_byte_timeout_s, job.request_timeout_s))
+                if self._stream_read_timeout_kw:
+                    events = self._transport.stream_generate_content(
+                        lease.state.secret, lease.model, job.payload, first_byte, job.cancel_event,
+                        read_timeout_s=job.request_timeout_s,
+                    )
+                else:
+                    events = self._transport.stream_generate_content(
+                        lease.state.secret, lease.model, job.payload, first_byte, job.cancel_event
+                    )
                 for event in events:
                     if job.cancel_event.is_set():
                         break

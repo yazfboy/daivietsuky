@@ -78,10 +78,20 @@ ASSETS_DIR = PUBLIC_DIR / "assets"
 HEROES_DIR = ASSETS_DIR / "heroes"
 
 EXTERNAL_TIMEOUT_S = 8.0  # trần cứng cho mọi lệnh gọi ra ngoài
-REQUEST_TIMEOUT_S = 7.0  # mỗi lần gọi Gemini (byte đầu / giữa hai cụm stream); failover trong EXTERNAL_TIMEOUT_S
+REQUEST_TIMEOUT_S = 7.0  # generateContent: chờ cả phản hồi; stream: chờ giữa hai cụm SSE sau byte đầu
+# Stream: chờ byte đầu tối đa 3 s (model khoẻ trả sau ~1–1,5 s) rồi xoay ngay sang key/model khác. Mọi lần thử đều bị
+# cắt theo phần còn lại của hạn chót EXTERNAL_TIMEOUT_S, nên cả lượt failover không bao giờ vượt 8 s.
+FIRST_BYTE_TIMEOUT_S = 3.0
 BACKDROP_WAIT_S = EXTERNAL_TIMEOUT_S  # chờ ảnh nền (thư viện / Wikimedia) tối đa trong một lượt
-# Thứ tự model của AI Nhân vật cho máy chủ: model ổn định (~1–2 s) trước, model hay quá tải (503/treo) làm dự phòng.
-ACTOR_MODELS: tuple[str, ...] = ("gemini-3-flash-preview", "gemini-3.5-flash", "gemini-3.5-flash-lite")
+# Thứ tự model của AI Nhân vật cho máy chủ: chỉ các model đo được ~1–1,5 s tới chữ đầu. gemini-3.5-flash bị bỏ khỏi
+# chuỗi vì đo được 6–8 s tới byte đầu và hay 503 "high demand" (không kịp trong hạn 8 s).
+ACTOR_MODELS: tuple[str, ...] = ("gemini-3-flash-preview", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
+# Nhịp phát lời thoại xuống frontend: Gemini thường đổ cả câu trả lời trong ~1–2 s (hoặc câu trả lời dự phòng ra cùng
+# lúc), khiến miệng nhân vật không kịp cử động trước cụm cuối. Mỗi cụm cách cụm trước một khoảng tỷ lệ với thời lượng
+# nói của nó (kẹp trong [MIN, MAX]) — chữ đầu tiên không bị trễ, sự kiện cảnh / ảnh nền không bị chặn.
+SPEECH_PACE_RATIO = 0.15
+SPEECH_GAP_MIN_S = 0.06
+SPEECH_GAP_MAX_S = 0.25
 PRODUCTION_ORIGINS = ("https://yazfboy.github.io",)
 DEV_ORIGINS = (
     "http://localhost:5173",
@@ -163,7 +173,8 @@ class Services:
     @classmethod
     def create(cls) -> "Services":
         keys = load_api_keys_any()  # biến môi trường (server) hoặc ./.env (local) — 5 key Google AI Studio
-        pool = GeminiKeyPool(keys, request_timeout_s=REQUEST_TIMEOUT_S, total_deadline_s=EXTERNAL_TIMEOUT_S)
+        pool = GeminiKeyPool(keys, request_timeout_s=REQUEST_TIMEOUT_S, total_deadline_s=EXTERNAL_TIMEOUT_S,
+                             first_byte_timeout_s=FIRST_BYTE_TIMEOUT_S)
         cache = DiskDPCache()
         hf = HuggingFaceImageSource(cache, timeout_s=EXTERNAL_TIMEOUT_S)
         wikimedia = WikimediaCommonsSource(cache, timeout_s=EXTERNAL_TIMEOUT_S, retries=0)
@@ -322,6 +333,11 @@ def fallback_answer(director: DirectorAgent, profile: CharacterProfile, question
 # ======================================================================================
 # Một lượt hỏi–đáp
 # ======================================================================================
+def speech_gap_s(speak_ms: float, pause_ms: float) -> float:
+    """Khoảng cách tối thiểu (giây) trước khi phát cụm lời thoại kế tiếp."""
+    return min(SPEECH_GAP_MAX_S, max(SPEECH_GAP_MIN_S, SPEECH_PACE_RATIO * (speak_ms + pause_ms) / 1000.0))
+
+
 def clean_previous_key(value: Any) -> str | None:
     """Mã lượt trước do frontend gửi lên là dữ liệu không tin cậy: chỉ nhận đúng chuẩn ``^[a-z0-9_]+$``."""
     key = clean_topic_key(value) if isinstance(value, str) and len(value) <= 64 else ""
@@ -367,12 +383,38 @@ async def run_turn(
         backdrop_sent.append(True)
         await queue.put({"type": "backdrop", "t_ms": now_ms(), "stateId": directive.state_id, "backdrop": result})
 
+    speech_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+    async def speech_pacer() -> None:
+        """Chuyển lời thoại sang hàng đợi chính theo nhịp nói (xem SPEECH_PACE_RATIO)."""
+        loop = asyncio.get_running_loop()
+        next_at = 0.0
+        while True:
+            item = await speech_queue.get()
+            if item is None:
+                return
+            wait = next_at - loop.time()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            item["t_ms"] = now_ms()
+            await queue.put(item)
+            chunk = item["chunk"]
+            next_at = loop.time() + speech_gap_s(chunk["speak_ms"], chunk["pause_ms"])
+
+    pacer_task = asyncio.create_task(speech_pacer(), name=f"speech:{profile.character_id}")
+
+    async def flush_speech() -> None:
+        """Chờ mọi cụm lời thoại đã xếp hàng được phát xong (trước ``done``)."""
+        if not pacer_task.done():
+            await speech_queue.put(None)
+            await asyncio.gather(pacer_task, return_exceptions=True)
+
     async def emit_chunk(chunk: SpeechChunk, source: str) -> None:
         spoken.append(chunk.text)
         if chunk.is_final:
             state["final_sent"] = True
         mouth = current["directive"].mouth_sync_enabled
-        await queue.put({"type": "speech", "t_ms": now_ms(), "chunk": chunk_payload(services, chunk, mouth, source)})
+        await speech_queue.put({"type": "speech", "t_ms": now_ms(), "chunk": chunk_payload(services, chunk, mouth, source)})
 
     async def emit_fallback() -> None:
         text = fallback_answer(services.director, profile, cleaned)
@@ -407,6 +449,7 @@ async def run_turn(
                     summary: TurnSummary = event.data
                     if not state["final_sent"]:
                         await emit_fallback()
+                    await flush_speech()
                     directive = summary.directive or current["directive"]
                     await queue.put({
                         "type": "done",
@@ -428,6 +471,7 @@ async def run_turn(
             if not state["final_sent"]:
                 await emit_fallback()
         finally:
+            await flush_speech()
             task = backdrop.get("task")
             if task is None:  # AI Đạo diễn không chốt được cảnh → ảnh nền theo bản xem trước
                 task = asyncio.create_task(send_backdrop(current["directive"]), name="backdrop")
@@ -451,9 +495,10 @@ async def run_turn(
             yield item
         yield {"type": "turn_end", "t_ms": now_ms()}
     finally:
-        if not pump_task.done():
-            pump_task.cancel()
-        await asyncio.gather(pump_task, return_exceptions=True)
+        for task in (pump_task, pacer_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(pump_task, pacer_task, return_exceptions=True)
 
 
 # ======================================================================================
