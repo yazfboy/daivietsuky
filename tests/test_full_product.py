@@ -110,11 +110,11 @@ def first(events: list[dict[str, Any]], kind: str) -> dict[str, Any] | None:
 
 def describe_turn(events: list[dict[str, Any]], seconds: float) -> None:
     done = first(events, "done") or {}
-    visual = first(events, "visual") or {}
+    backdrop = (first(events, "backdrop") or {}).get("backdrop") or {}
     chunks = speech(events)
     answer = done.get("answer", "")
     print(f"    · {len(events)} sự kiện, {len(chunks)} cụm chữ, {seconds:.1f}s; AI Đạo diễn: {done.get('directorDecidedBy')}; "
-          f"AI Nhân vật: {done.get('actorModel')} ({done.get('actorKey')}); cảnh động: {visual.get('status')}")
+          f"AI Nhân vật: {done.get('actorModel')} ({done.get('actorKey')}); ảnh nền: {backdrop.get('source')}")
     if done.get("errors"):
         print(f"    · lỗi được xử lý: {done['errors']}")
     print(f"    · trả lời: {answer[:260].replace(chr(10), ' ')}{'…' if len(answer) > 260 else ''}")
@@ -231,6 +231,8 @@ def test_environment() -> list[str]:
 
 def test_server_basics(client: TestClient) -> None:
     section("2. Máy chủ FastAPI: health, danh sách anh hùng, tài nguyên tĩnh")
+    wake = client.get("/health")
+    check("/health trả nhanh, không gọi Gemini", wake.status_code == 200 and wake.json() == {"status": "ok"})
     health = client.get("/api/health").json()
     check("/api/health: 5 key trong pool đa luồng", health.get("status") == "ok" and health.get("keys") == 5)
     response = client.get("/api/heroes")
@@ -266,8 +268,9 @@ def test_talking(client: TestClient) -> dict[str, Any]:
     scene = final[0] if final else {}
     check("sceneMode = FOREGROUND_TALKING", scene.get("sceneMode") == "FOREGROUND_TALKING")
     check("mouthSyncEnabled = True", scene.get("mouthSyncEnabled") is True)
-    check("Hậu cảnh: ảnh động quê hương (HOMELAND / homeland)",
-          scene.get("backgroundType") == "HOMELAND" and scene.get("contextKey") == "homeland", scene.get("contextTitle", "")[:60])
+    check("Hậu cảnh: quê hương (HOMELAND / que_huong_tuc_mac)",
+          scene.get("backgroundType") == "HOMELAND" and scene.get("contextKey") == "que_huong_tuc_mac"
+          and scene.get("contextTopicKey") == "que_huong_tuc_mac", scene.get("contextTitle", "")[:60])
     check("Nhân vật đứng tiền cảnh, đang nói (character_action)",
           any(w in scene.get("characterAction", "").lower() for w in ("speak", "talk", "nói", "foreground", "camera")),
           scene.get("characterAction", "")[:90])
@@ -293,9 +296,11 @@ def test_talking(client: TestClient) -> dict[str, Any]:
     check("Nội dung lịch sử chuẩn: năm sinh ~1228 & năm mất 1300",
           "1228" in answer and ("1300" in answer or "Canh Tý" in answer))
     check("Ra chữ đầu tiên trong hạn (≤ 10 s)", bool(chunks) and chunks[0]["t_ms"] <= 10_000, f"{chunks[0]['t_ms'] if chunks else '-'} ms")
-    visual = first(events, "visual")
-    check("visual_pipeline xử lý cảnh động trong hạn 8 s (ready / rendering nền / dự phòng 60 FPS)",
-          visual is not None and visual["status"] in ("ready", "rendering", "unavailable"), (visual or {}).get("status", ""))
+    backdrop = first(events, "backdrop")
+    info = (backdrop or {}).get("backdrop") or {}
+    check("Ảnh nền theo bối cảnh trong hạn 8 s (thư viện / Wikimedia / phông trung tính)",
+          backdrop is not None and info.get("source") in ("library", "wikimedia", "neutral")
+          and info.get("contextTopicKey") == "que_huong_tuc_mac", info.get("source", ""))
     return {"chunks": chunks, "scene": scene}
 
 
@@ -345,8 +350,8 @@ def test_stage_engine(talk: dict[str, Any], action: dict[str, Any]) -> None:
     if not check("Chạy được động cơ TypeScript của frontend (node + esbuild)", result is not None):
         return
     t, a = result["talk"], result["action"]
-    check("Sân khấu: hậu cảnh quê hương động (theme homeland)", result["themes"][0] == "homeland")
-    check("Sân khấu: hậu cảnh trận Bạch Đằng động (theme naval: sóng, cọc, chiến thuyền, khói lửa)", result["themes"][1] == "naval")
+    check("Sân khấu offline: hậu cảnh quê hương động (theme homeland)", result["themes"][0] == "homeland")
+    check("Sân khấu offline: hậu cảnh trận Bạch Đằng động (theme naval)", result["themes"][1] == "naval")
     check("Miệng cử động khi đang stream (FOREGROUND_TALKING)",
           t["maxOpen"] > 0.3 and t["activeFraction"] > 0.3 and t["distinctVisemes"] >= 3,
           f"mở tối đa {t['maxOpen']:.2f}, {t['activeFraction'] * 100:.0f}% khung mở, {t['distinctVisemes']} viseme, "

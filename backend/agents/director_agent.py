@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import re
 import time
 from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -29,8 +30,6 @@ from typing import Any
 
 from ..core.dp_optimizer import (
     HOMELAND_CONTEXT_KEY,
-    INTENT_ACTION,
-    SCENE_BACKGROUND_ACTION,
     SCENE_FOREGROUND_TALKING,
     SCENE_MODES,
     ContextAnalyzer,
@@ -43,8 +42,23 @@ from ..core.dp_optimizer import (
     normalize_text,
     strip_diacritics,
 )
+from ..core.dp_optimizer import TopicKeyCache, is_valid_topic_key
 from ..core.key_pool import GeminiKeyPool, KeyPoolError
-from .actor_agent import CHARACTERS, ActorAgent, CharacterProfile, get_character
+from ..core.scene_library import SceneLibrary
+from .actor_agent import CHARACTERS, ActorAgent, CharacterProfile, HistoricalEvent, get_character
+from .history_rules import (
+    GENERAL_TOPIC_KEY,
+    HERO_EVENTS,
+    HERO_HOMELAND_TOPIC,
+    QUESTION_KIND_BIOGRAPHY,
+    QUESTION_KIND_HISTORICAL,
+    QUESTION_KIND_OFF_TOPIC,
+    QUESTION_KINDS,
+    clean_topic_key,
+    detect_era_boundary,
+    looks_biographical,
+    scene_mode_for,
+)
 
 __all__ = [
     "BACKGROUND_BATTLEFIELD",
@@ -57,6 +71,7 @@ __all__ = [
     "SceneBeat",
     "SceneDirective",
     "Storyboard",
+    "TopicInfo",
     "TurnEvent",
     "TurnSummary",
     "character_reference_path",
@@ -78,36 +93,33 @@ _CONSISTENCY_CLAUSE = (
     "proportions); only the hero's pose, action, expression and the background change."
 )
 
-_SCENE_SYSTEM_PROMPT = """Bạn là AI ĐẠO DIỄN HÌNH ẢNH của ứng dụng giáo dục lịch sử "Đại Việt Sử Ký". Ứng dụng có đúng 3 nhân vật: Trần Hưng Đạo, Nguyễn Trãi, Quang Trung – Nguyễn Huệ. Người dùng đặt câu hỏi cho nhân vật; một AI Nhân vật khác trả lời bằng lời thoại. Bạn KHÔNG trả lời câu hỏi. Nhiệm vụ của bạn là quyết định trạng thái khung hình và viết prompt hình ảnh động cho cảnh.
+_SCENE_SYSTEM_PROMPT = """Bạn là AI ĐẠO DIỄN BỐI CẢNH của ứng dụng giáo dục lịch sử "Đại Việt Sử Ký". Ứng dụng có đúng 3 nhân vật: Trần Hưng Đạo, Nguyễn Trãi, Quang Trung – Nguyễn Huệ. Người dùng hỏi một nhân vật; một AI Nhân vật khác trả lời bằng lời thoại. Bạn KHÔNG trả lời câu hỏi. Nhiệm vụ DUY NHẤT của bạn là chọn MÃ BỐI CẢNH (context_topic_key) cho ảnh nền phía sau nhân vật. Chế độ khung hình (nhân vật đứng nói hay hành động trong trận) do hệ thống tự quyết theo bảng sử liệu cố định, bạn không cần chọn.
 
-QUY TẮC CHỌN scene_mode (chỉ được chọn 1 trong 2 giá trị)
-1. "FOREGROUND_TALKING": câu hỏi xin THÔNG TIN hoặc NHẬN ĐỊNH, không cần tái hiện hành động — năm sinh, năm mất, tuổi, quê quán, gia đình, tên hiệu, chức tước, tính cách, tư tưởng, tác phẩm (nội dung, ý nghĩa), bài học, lời khuyên, cảm nghĩ.
-   → Nhân vật đứng ở tiền cảnh, nhìn người xem và mấp máy môi nói chuyện; hậu cảnh là ẢNH ĐỘNG QUÊ HƯƠNG của nhân vật.
-   → background_type = "HOMELAND", context_key = "homeland".
-2. "BACKGROUND_ACTION": câu hỏi về TRẬN ĐÁNH, chiến dịch, cuộc hành quân, hoặc một HÀNH ĐỘNG / SỰ KIỆN cụ thể cần tái hiện (diễn biến trận đánh, cách dùng kế, tiến quân, lên ngôi, viết hịch...).
-   → Hậu cảnh chính là trận đánh / sự kiện đó; nhân vật xuất hiện TRONG cảnh và đang hành động (chỉ huy, giao chiến, cưỡi voi, vung gươm, viết hịch...), KHÔNG đứng nói chuyện trước màn hình và không cần cử động môi.
-   → background_type = "BATTLEFIELD" nếu là trận đánh / chiến dịch, "HISTORICAL_EVENT" nếu là sự kiện không phải trận đánh; context_key = mã sự kiện khớp nhất trong danh sách, nếu không có thì "other_event".
-Câu hỏi vừa hỏi tiểu sử vừa hỏi trận đánh thì chọn "BACKGROUND_ACTION".
-
-VÍ DỤ
-- "Quê ông ở đâu?" → FOREGROUND_TALKING, HOMELAND, homeland
-- "Ông có lời khuyên gì cho học sinh?" → FOREGROUND_TALKING, HOMELAND, homeland
-- "Ông đánh tan giặc trên sông bằng cách nào?" → BACKGROUND_ACTION, BATTLEFIELD, <mã trận tương ứng>
-- "Ông lên ngôi hoàng đế ra sao?" → BACKGROUND_ACTION, HISTORICAL_EVENT, <mã sự kiện tương ứng>
+CÁCH CHỌN context_topic_key
+1. Mã là chuỗi tiếng Anh/không dấu, chữ thường, dạng snake_case, chỉ gồm a-z, 0-9 và dấu gạch dưới (regex ^[a-z0-9_]+$), vd: moscow_red_square, bach_dang_1288, ngoc_hoi_dong_da_1789, que_huong_tuc_mac.
+2. LUÔN ưu tiên một mã trong THƯ VIỆN CẢNH CÓ SẴN. Chỉ đặt mã mới khi không mã nào khớp (vd. một địa danh nước ngoài chưa có trong thư viện).
+3. Câu hỏi không ghi năm thì chọn trận / sự kiện gắn với chính nhân vật đang được hỏi (Trần Hưng Đạo + "Bạch Đằng" → bach_dang_1288). Nhân vật khác hỏi về Bạch Đằng cũng dùng bach_dang_1288.
+4. GIỮ HAY ĐỔI BỐI CẢNH: nếu có MÃ BỐI CẢNH LƯỢT TRƯỚC và câu hỏi mới vẫn nói tiếp chủ đề / địa danh đó (hỏi tiếp diễn biến, chi tiết, "rồi sau đó thế nào"...) thì keep_previous_topic = true và context_topic_key = ĐÚNG NGUYÊN mã lượt trước. Câu hỏi chuyển sang chủ đề / địa danh khác thì keep_previous_topic = false và đặt mã mới.
+5. question_kind:
+   - "biography": hỏi về bản thân nhân vật (năm sinh, năm mất, quê quán, gia đình, tên hiệu, tuổi thơ...). Chỉ loại này mới dùng mã quê hương (que_huong_...) của nhân vật.
+   - "historical_topic": hỏi về một trận đánh, sự kiện, địa danh, quốc gia, công trình có thật trong lịch sử — kể cả quốc gia / địa danh nước ngoài mà nhân vật chưa biết (vd. "Ông biết gì về nước Nga?" → historical_topic, moscow_red_square, KHÔNG phải off_topic).
+   - "off_topic": câu hỏi lạc đề, đùa cợt, không phù hợp, hoặc không gắn với địa danh / sự kiện nào → context_topic_key = "chu_de_chung".
+6. beyond_era = true khi câu hỏi nhắc tới quốc gia, địa danh, sự kiện, khái niệm mà sinh thời nhân vật chưa thể biết (vd. nước Nga, châu Mỹ, máy bay đối với cả 3 nhân vật).
+7. wikimedia_search_query: CHỈ khi question_kind là "historical_topic" hoặc "biography": 2–6 từ khóa tiếng Anh để tìm ẢNH PHONG CẢNH / CÔNG TRÌNH của đúng địa danh đó trên Wikimedia Commons (vd. "Red Square Moscow Kremlin", "Bach Dang River Quang Ninh"). Không dùng từ map, flag, diagram, logo. "off_topic" thì để chuỗi rỗng.
+8. topic_title_vi: tên bối cảnh ngắn gọn bằng tiếng Việt có dấu (vd. "Mát-xcơ-va (nước Nga)", "Trận Bạch Đằng").
 
 QUY TẮC VIẾT PROMPT (tiếng Anh, giữ nguyên tên riêng tiếng Việt có dấu)
-- Nhân vật luôn được gọi là "the hero from the reference image": tuyệt đối không mô tả lại hay thay đổi khuôn mặt, kiểu tóc, trang phục; chỉ mô tả tư thế, hành động, biểu cảm.
-- background_prompt: hậu cảnh CÓ CHUYỂN ĐỘNG (nước chảy, cờ bay, khói, mây trôi, lúa đung đưa...), đúng địa danh, thời đại, kiến trúc, trang phục, vũ khí, thuyền bè; không có chi tiết lỗi thời; 40–80 từ.
-- character_action: hành động / tư thế của nhân vật (FOREGROUND_TALKING: đứng tiền cảnh, nhìn thẳng người xem, đang nói, cử chỉ tay nhẹ, miệng không bị che; BACKGROUND_ACTION: hành động cụ thể trong trận / sự kiện); 1–2 câu.
-- scene_prompt: prompt hoàn chỉnh 70–130 từ cho mô hình tạo ảnh / video: bố cục, hành động nhân vật, hậu cảnh động, ánh sáng, góc máy, chuyển động máy quay, phong cách tranh điện ảnh cổ trang; phải nhắc "the hero from the reference image".
-- reason: một câu tiếng Việt giải thích vì sao chọn scene_mode."""
+- background_prompt: mô tả hậu cảnh đúng địa danh, thời đại, kiến trúc; không có chi tiết lỗi thời; 30–60 từ; không mô tả nhân vật.
+- character_action: một câu mô tả tư thế / hành động của "the hero from the reference image"; không mô tả lại khuôn mặt, trang phục.
+- scene_prompt: 50–100 từ cho mô hình hình ảnh: bố cục, hậu cảnh, ánh sáng, góc máy; phải nhắc "the hero from the reference image".
+- reason: một câu tiếng Việt giải thích vì sao chọn mã bối cảnh."""
 
 _STORYBOARD_SYSTEM_PROMPT = """Bạn là AI ĐẠO DIỄN PHÂN CẢNH của ứng dụng giáo dục lịch sử "Đại Việt Sử Ký". Lời thoại của nhân vật lịch sử đã được thuật toán quy hoạch động chia thành các phân cảnh liên tiếp. Với MỖI phân cảnh, viết:
 - character_action: hành động / tư thế của nhân vật trong phân cảnh (tiếng Anh, 1–2 câu).
 - scene_prompt: prompt 50–100 từ (tiếng Anh) cho mô hình tạo ảnh / video, minh họa ĐÚNG nội dung lời thoại của phân cảnh đó và liền mạch với phân cảnh trước.
 
 QUY TẮC
-- FOREGROUND_TALKING: nhân vật luôn đứng tiền cảnh, nhìn người xem và đang nói (miệng không bị che); hậu cảnh luôn là quê hương đã chốt; chỉ thay đổi chi tiết chuyển động, ánh sáng, góc máy và cử chỉ tay cho hợp lời thoại.
+- FOREGROUND_TALKING: nhân vật luôn đứng tiền cảnh, nhìn người xem và đang nói (miệng không bị che); hậu cảnh luôn là bối cảnh đã chốt (chỉ minh họa, nhân vật không tham chiến); chỉ thay đổi chi tiết ánh sáng, góc máy và cử chỉ tay cho hợp lời thoại.
 - BACKGROUND_ACTION: nhân vật ở trong cảnh và đang hành động, không nhìn vào máy quay để nói; mỗi phân cảnh là một nhịp diễn biến khác nhau của trận đánh / sự kiện, đúng trình tự trong lời thoại.
 - Nhân vật luôn là "the hero from the reference image": không mô tả lại hay thay đổi khuôn mặt, trang phục.
 - Đúng thời đại, địa danh, vũ khí, trang phục; không có chi tiết lỗi thời; không chữ, không watermark.
@@ -149,9 +161,32 @@ class SceneDirective:
     key_label: str | None
     model: str | None
     latency_ms: float
+    # --- bối cảnh chuẩn hóa (context_topic_key) ---
+    context_topic_key: str = ""
+    previous_context_topic_key: str | None = None
+    topic_changed: bool = True
+    topic_title: str = ""
+    topic_year: str = ""
+    topic_kind: str = ""  # battle | event | homeland | place | other
+    question_kind: str = QUESTION_KIND_HISTORICAL  # biography | historical_topic | off_topic
+    wikimedia_search_query: str = ""
+    image_allowed: bool = True  # False → chỉ phông trung tính (câu lạc đề / quê hương ngoài câu hỏi tiểu sử)
+    beyond_era: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
+
+
+@dataclass(frozen=True)
+class TopicInfo:
+    """Thông tin bối cảnh đã chốt, lưu theo (nhân vật, context_topic_key) để tra lại O(1)."""
+
+    key: str
+    title: str
+    year: str
+    kind: str
+    wikimedia_search_query: str
+    background_prompt: str
 
 
 @dataclass(frozen=True)
@@ -271,6 +306,30 @@ def _parse_beats(text: str, segment_count: int) -> dict[int, Mapping[str, Any]]:
     return beats
 
 
+_SAFE_QUERY_RE = re.compile(r"[^A-Za-z0-9 \-'.,]+")
+# Sự kiện trong hồ sơ nhân vật tương ứng với từng mã bối cảnh (để lấy gợi ý hình ảnh / hành động).
+_TOPIC_TO_PROFILE_EVENT = {
+    "khang_chien_mong_nguyen_1285": "khang_chien_mong_nguyen",
+    "khang_chien_mong_nguyen_1287_1288": "khang_chien_mong_nguyen",
+}
+_PROFILE_EVENT_TO_TOPIC = {"khang_chien_mong_nguyen": "khang_chien_mong_nguyen_1287_1288"}
+
+
+def _profile_event(profile: CharacterProfile, topic_key: str) -> HistoricalEvent | None:
+    return profile.event(topic_key) or profile.event(_TOPIC_TO_PROFILE_EVENT.get(topic_key, ""))
+
+
+def _safe_query(value: Any) -> str:
+    """Từ khóa tìm ảnh: chỉ chữ Latinh/số/khoảng trắng, tối đa 8 từ, 80 ký tự."""
+    text = strip_diacritics(_clean(value))
+    text = " ".join(_SAFE_QUERY_RE.sub(" ", text).split()[:8])
+    return text[:80].strip()
+
+
+def _humanize_key(key: str) -> str:
+    return key.replace("_", " ").strip().title() or "Đại Việt"
+
+
 def _entities_of(profile: CharacterProfile) -> list[ContextEntity]:
     entities = [ContextEntity(HOMELAND_CONTEXT_KEY, "homeland", profile.homeland_aliases)]
     entities.extend(ContextEntity(event.event_id, event.kind, event.aliases) for event in profile.events)
@@ -296,6 +355,7 @@ class DirectorAgent:
         request_timeout_s: float = 20.0,
         cache: VisualStateCache[SceneDirective] | None = None,
         segmentation_config: SegmentationConfig | None = None,
+        library: SceneLibrary | None = None,
     ) -> None:
         if not models:
             raise ValueError("Cần ít nhất một model cho AI Đạo diễn.")
@@ -308,6 +368,9 @@ class DirectorAgent:
         self.request_timeout_s = request_timeout_s
         self.cache: VisualStateCache[SceneDirective] = cache if cache is not None else VisualStateCache()
         self.segmentation_config = segmentation_config or SegmentationConfig()
+        self.library = library if library is not None else SceneLibrary.load()
+        # Tra O(1) theo (nhân vật, context_topic_key): giữ nguyên chủ đề → lấy lại bối cảnh đã chốt, không dựng lại.
+        self.topics: TopicKeyCache[TopicInfo] = TopicKeyCache()
         all_names = [
             name
             for profile in CHARACTERS.values()
@@ -340,8 +403,8 @@ class DirectorAgent:
         if scene_mode == SCENE_FOREGROUND_TALKING:
             rule = (
                 " Mode FOREGROUND_TALKING: place the hero in the foreground, waist-up, facing the viewer with the "
-                "mouth clearly visible and unobstructed for lip-sync animation, in front of an animated background "
-                f"of his homeland: {profile.homeland_en}."
+                "mouth clearly visible and unobstructed for lip-sync animation; the background only illustrates the "
+                "place or event being talked about — the hero does not take part in it."
             )
         else:
             rule = (
@@ -362,37 +425,46 @@ class DirectorAgent:
             items += ["hero posing for the camera", "hero talking to the viewer"]
         return ", ".join(items)
 
-    def build_scene_payload(self, character_id: str, question: str) -> dict[str, Any]:
+    def build_scene_payload(
+        self, character_id: str, question: str, previous_context_topic_key: str | None = None
+    ) -> dict[str, Any]:
         profile = get_character(character_id)
-        reference = character_reference_path(profile.character_id)
-        events = "\n".join(
-            f"- {event.event_id} | {event.name} | {event.year} | "
-            f"{'trận đánh' if event.kind == 'battle' else 'sự kiện'} | {event.visual_brief} | "
-            f"gợi ý hành động: {event.hero_action}"
-            for event in profile.events
+        own_events = sorted(HERO_EVENTS.get(profile.character_id, frozenset()))
+        catalog = "\n".join(
+            f"- {entry.key} | {entry.title}{f' | {entry.year}' if entry.year else ''} | {entry.kind}"
+            + (f" | quê hương của {get_character(entry.hero_id).display_name}" if entry.hero_id else "")
+            for entry in self.library.entries()
         )
+        previous = previous_context_topic_key or ""
+        previous_line = "(không có — đây là lượt hỏi đầu tiên)"
+        if previous:
+            cached = self.topics.get(profile.character_id, previous)
+            entry = self.library.get(previous)
+            title = cached.title if cached else (entry.title if entry else _humanize_key(previous))
+            previous_line = f"{previous} ({title})"
         user_text = (
-            f"NHÂN VẬT: {profile.display_name} ({profile.full_name}) — {profile.era}\n"
-            f"ẢNH MẪU CỐ ĐỊNH: {reference}\n"
-            f"QUÊ HƯƠNG: {profile.homeland}\n"
-            f"GỢI Ý HÌNH ẢNH QUÊ HƯƠNG: {profile.homeland_visual}\n"
-            f"TRANG PHỤC THEO ẢNH MẪU: {profile.costume_hint}\n"
-            "CÁC SỰ KIỆN ĐÃ BIẾT (context_key | tên | năm | loại | gợi ý hình ảnh | gợi ý hành động):\n"
-            f"{events}\n\n"
+            f"NHÂN VẬT ĐANG ĐƯỢC HỎI: {profile.display_name} ({profile.full_name}) — {profile.era}\n"
+            f"MÃ QUÊ HƯƠNG CỦA NHÂN VẬT: {HERO_HOMELAND_TOPIC[profile.character_id]}\n"
+            f"TRẬN NHÂN VẬT TRỰC TIẾP CHỈ HUY: {', '.join(own_events) if own_events else '(không có)'}\n"
+            f"THƯ VIỆN CẢNH CÓ SẴN (context_topic_key | tên | năm | loại):\n{catalog}\n"
+            f"- {GENERAL_TOPIC_KEY} | Chủ đề chung (câu hỏi lạc đề / không gắn địa danh) | other\n\n"
+            f"MÃ BỐI CẢNH LƯỢT TRƯỚC (previous_context_topic_key): {previous_line}\n\n"
             f"CÂU HỎI NGƯỜI DÙNG GỬI {profile.display_name.upper()}: \"{question}\""
         )
-        context_keys = [HOMELAND_CONTEXT_KEY, *(event.event_id for event in profile.events), OTHER_EVENT_KEY]
         order = [
-            "reason", "scene_mode", "background_type", "context_key", "background_prompt", "character_action",
-            "scene_prompt",
+            "reason", "question_kind", "keep_previous_topic", "context_topic_key", "topic_title_vi",
+            "wikimedia_search_query", "beyond_era", "background_prompt", "character_action", "scene_prompt",
         ]
         schema = {
             "type": "OBJECT",
             "properties": {
                 "reason": {"type": "STRING"},
-                "scene_mode": {"type": "STRING", "enum": list(SCENE_MODES)},
-                "background_type": {"type": "STRING", "enum": list(BACKGROUND_TYPES)},
-                "context_key": {"type": "STRING", "enum": context_keys},
+                "question_kind": {"type": "STRING", "enum": list(QUESTION_KINDS)},
+                "keep_previous_topic": {"type": "BOOLEAN"},
+                "context_topic_key": {"type": "STRING"},
+                "topic_title_vi": {"type": "STRING"},
+                "wikimedia_search_query": {"type": "STRING"},
+                "beyond_era": {"type": "BOOLEAN"},
                 "background_prompt": {"type": "STRING"},
                 "character_action": {"type": "STRING"},
                 "scene_prompt": {"type": "STRING"},
@@ -400,7 +472,7 @@ class DirectorAgent:
             "required": order,
             "propertyOrdering": order,
         }
-        return self._payload(_SCENE_SYSTEM_PROMPT, user_text, schema, max_output_tokens=1400)
+        return self._payload(_SCENE_SYSTEM_PROMPT, user_text, schema, max_output_tokens=1200)
 
     def build_storyboard_payload(self, directive: SceneDirective, segmentation: SegmentationResult) -> dict[str, Any]:
         profile = get_character(directive.character_id)
@@ -458,38 +530,70 @@ class DirectorAgent:
         }
 
     # ------------------------------------------------------------------ quyết định cảnh
-    def _rule_based_decision(self, profile: CharacterProfile, fingerprint: ContextFingerprint) -> dict[str, Any]:
-        """Phương án dự phòng khi không gọi được AI: suy luận từ từ khoá và thực thể của câu hỏi."""
-        event = next((profile.event(eid) for eid in fingerprint.entities if profile.event(eid) is not None), None)
-        if fingerprint.intent == INTENT_ACTION:
-            background = event.visual_brief if event else (
-                f"A dramatic, historically accurate scene from the life of {profile.display_name} in "
-                f"{profile.era_en}, with era-appropriate soldiers, banners and landscape in motion."
-            )
-            action = event.hero_action if event else (
-                "the hero from the reference image leads his troops in the midst of the action, raising his sword "
-                "and giving commands"
-            )
-            return {
-                "scene_mode": SCENE_BACKGROUND_ACTION,
-                "background_type": (
-                    BACKGROUND_HISTORICAL_EVENT if event is not None and event.kind == "event" else BACKGROUND_BATTLEFIELD
-                ),
-                "context_key": event.event_id if event else OTHER_EVENT_KEY,
-                "background_prompt": background,
-                "character_action": action,
-                "scene_prompt": f"Wide cinematic shot, dynamic camera. {action}. Setting: {background}",
-                "reason": "Quy tắc dự phòng: câu hỏi về trận đánh / hành động nên tái hiện cảnh hành động.",
-            }
+    def _match_library(self, profile: CharacterProfile, question: str) -> str | None:
+        """Tìm mã thư viện mà câu hỏi nhắc tới (bí danh dài nhất thắng; trận của chính nhân vật được ưu tiên)."""
+        haystack = " " + re.sub(r"[^a-z0-9]+", " ", strip_diacritics(normalize_text(question))) + " "
+        own = HERO_EVENTS.get(profile.character_id, frozenset())
+        best: tuple[int, int, str] | None = None
+        for entry in self.library.entries():
+            for alias in (entry.key, *entry.aliases):
+                phrase = f" {alias.replace('_', ' ')} "
+                if phrase in haystack:
+                    rank = (len(alias), 1 if entry.key in own else 0, entry.key)
+                    if best is None or rank[:2] > best[:2]:
+                        best = rank
+        return best[2] if best else None
+
+    def _rule_based_decision(
+        self,
+        profile: CharacterProfile,
+        fingerprint: ContextFingerprint,
+        question: str,
+        previous: str | None,
+    ) -> dict[str, Any]:
+        """Phương án không cần AI (xem trước tức thời / dự phòng khi AI lỗi): suy từ từ khoá, thực thể, thư viện."""
+        boundary = detect_era_boundary(profile.character_id, question)
+        biography = looks_biographical(question) or HOMELAND_CONTEXT_KEY in fingerprint.entities
+        kind = QUESTION_KIND_HISTORICAL
+        query = ""
+        title = ""
+        if boundary is not None:
+            key = boundary.topic_key or clean_topic_key(boundary.topic_title) or GENERAL_TOPIC_KEY
+            title, query = boundary.topic_title, boundary.wikimedia_search_query
+            reason = f"Quy tắc: câu hỏi về {boundary.label} — ngoài hiểu biết sinh thời của nhân vật."
+        else:
+            key = self._match_library(profile, question) or ""
+            if not key:
+                event_id = next((eid for eid in fingerprint.entities if profile.event(eid) is not None), None)
+                if event_id is not None:
+                    key = _PROFILE_EVENT_TO_TOPIC.get(event_id, event_id)
+            if key == "khang_chien_mong_nguyen_1287_1288" and "1285" in question:
+                key = "khang_chien_mong_nguyen_1285"
+            entry = self.library.get(key) if key else None
+            if key and not (entry is not None and entry.is_homeland and not biography):
+                reason = "Quy tắc: câu hỏi nhắc tới bối cảnh có trong thư viện cảnh."
+                if entry is not None and entry.is_homeland:
+                    kind = QUESTION_KIND_BIOGRAPHY
+            elif biography:
+                key, kind = HERO_HOMELAND_TOPIC[profile.character_id], QUESTION_KIND_BIOGRAPHY
+                reason = "Quy tắc: câu hỏi tiểu sử → bối cảnh quê hương của nhân vật."
+            elif previous:
+                key = previous
+                reason = "Quy tắc: câu hỏi không nêu bối cảnh mới → giữ bối cảnh lượt trước."
+            else:
+                key = GENERAL_TOPIC_KEY
+                reason = "Quy tắc: câu hỏi không gắn địa danh / sự kiện → phông trung tính."
         return {
-            "scene_mode": SCENE_FOREGROUND_TALKING,
-            "background_type": BACKGROUND_HOMELAND,
-            "context_key": HOMELAND_CONTEXT_KEY,
-            "background_prompt": profile.homeland_visual,
-            "character_action": _FOREGROUND_ACTION,
-            "scene_prompt": f"Medium shot at eye level, slow push-in. {_FOREGROUND_ACTION}. Animated background: "
-            f"{profile.homeland_visual}",
-            "reason": "Quy tắc dự phòng: câu hỏi về thông tin / tiểu sử nên nhân vật đứng tiền cảnh trò chuyện.",
+            "reason": reason,
+            "question_kind": kind,
+            "keep_previous_topic": bool(previous) and key == previous,
+            "context_topic_key": key,
+            "topic_title_vi": title,
+            "wikimedia_search_query": query,
+            "beyond_era": boundary is not None,
+            "background_prompt": "",
+            "character_action": "",
+            "scene_prompt": "",
         }
 
     def _finalize_directive(
@@ -498,6 +602,7 @@ class DirectorAgent:
         question: str,
         data: Mapping[str, Any],
         *,
+        previous: str | None,
         state_id: str,
         decided_by: str,
         key_label: str | None,
@@ -505,69 +610,115 @@ class DirectorAgent:
         latency_ms: float,
         reason_suffix: str = "",
     ) -> SceneDirective:
-        """Kiểm tra & ép các bất biến: mouth_sync ⇔ FOREGROUND_TALKING, ảnh mẫu cố định, hậu cảnh đúng."""
-        scene_mode = _clean(data.get("scene_mode")).upper()
-        if scene_mode not in SCENE_MODES:
-            raise DirectorOutputError(f"scene_mode không hợp lệ: {data.get('scene_mode')!r}")
-        reference = character_reference_path(profile.character_id)
-        background = _clean(data.get("background_prompt"))
-        action = _clean(data.get("character_action"))
-        scene_prompt = _clean(data.get("scene_prompt"))
-        reason = _clean(data.get("reason")) or "AI Đạo diễn không nêu lý do."
+        """Chốt bối cảnh: chuẩn hóa mã, giữ/đổi theo lượt trước; scene_mode + khẩu hình do HERO_EVENTS quyết."""
+        hero_id = profile.character_id
+        question_kind = _clean(data.get("question_kind")).lower()
+        if question_kind not in QUESTION_KINDS:
+            question_kind = QUESTION_KIND_BIOGRAPHY if looks_biographical(question) else QUESTION_KIND_HISTORICAL
+        keep = data.get("keep_previous_topic") is True and bool(previous)
+        key = clean_topic_key(previous if keep else (data.get("context_topic_key") or data.get("context_key")))
+        if key == HOMELAND_CONTEXT_KEY:
+            key = HERO_HOMELAND_TOPIC[hero_id]
+        if key:
+            key = self.library.resolve(key) or _PROFILE_EVENT_TO_TOPIC.get(key, key)
+        if not key:
+            key = previous or (
+                HERO_HOMELAND_TOPIC[hero_id] if question_kind == QUESTION_KIND_BIOGRAPHY else GENERAL_TOPIC_KEY
+            )
+        # Câu hỏi về xứ sở có thật ngoài thời đại (vd. nước Nga) là chủ đề lịch sử – địa lý, KHÔNG phải lạc đề:
+        # AI xếp nhầm vào chủ đề chung / off_topic thì code đặt lại đúng bối cảnh minh họa.
+        boundary = detect_era_boundary(hero_id, question)
+        if boundary is not None and boundary.topic_key and (
+            key == GENERAL_TOPIC_KEY or question_kind == QUESTION_KIND_OFF_TOPIC
+        ):
+            key, question_kind = boundary.topic_key, QUESTION_KIND_HISTORICAL
+        if question_kind == QUESTION_KIND_OFF_TOPIC:
+            key = GENERAL_TOPIC_KEY
+        if not is_valid_topic_key(key):  # phòng thủ: không bao giờ phát mã sai chuẩn
+            key = GENERAL_TOPIC_KEY
 
-        if scene_mode == SCENE_FOREGROUND_TALKING:
+        entry = self.library.get(key)
+        cached = self.topics.get(hero_id, key)
+        is_general = key == GENERAL_TOPIC_KEY
+        topic_kind = entry.kind if entry else ("other" if is_general else "place")
+        # Ảnh quê hương CHỈ cho câu hỏi tiểu sử; câu lạc đề / chủ đề chung → phông trung tính, không tìm ảnh.
+        image_allowed = not is_general and question_kind != QUESTION_KIND_OFF_TOPIC and not (
+            entry is not None and entry.is_homeland and question_kind != QUESTION_KIND_BIOGRAPHY
+        )
+        if entry is not None:
+            title, year = entry.title, entry.year
+        elif is_general:
+            title, year = f"Trò chuyện cùng {profile.display_name}", ""
+        else:
+            title = (cached.title if cached else "") or _clean(data.get("topic_title_vi"))[:80] or _humanize_key(key)
+            year = ""
+        query = ""
+        if image_allowed:
+            query = (
+                (entry.wikimedia_search_query if entry is not None else "")
+                or _safe_query(data.get("wikimedia_search_query"))
+                or (cached.wikimedia_search_query if cached else "")
+            )
+
+        # LUẬT 1 — chốt bằng code: chỉ trận nhân vật trực tiếp chỉ huy mới là BACKGROUND_ACTION.
+        scene_mode = scene_mode_for(hero_id, key)
+        suggested = _clean(data.get("scene_mode")).upper()
+        if suggested in SCENE_MODES and suggested != scene_mode:
+            reason_suffix = f" (code ghi đè scene_mode {suggested} → {scene_mode} theo HERO_EVENTS){reason_suffix}"
+        beyond_era = data.get("beyond_era") is True or boundary is not None
+
+        event = _profile_event(profile, key)
+        if topic_kind == "homeland":
             background_type = BACKGROUND_HOMELAND
-            context_key = HOMELAND_CONTEXT_KEY
-            if not background or not _mentions_any(background, profile.homeland_aliases):
-                background = f"{profile.homeland_visual} {background}".strip()
+        elif topic_kind == "battle":
+            background_type = BACKGROUND_BATTLEFIELD
+        else:
+            background_type = BACKGROUND_HISTORICAL_EVENT
+        reference = character_reference_path(hero_id)
+        background = (
+            _clean(data.get("background_prompt"))
+            or (cached.background_prompt if cached else "")
+            or (event.visual_brief if event is not None else "")
+            or (profile.homeland_visual if topic_kind == "homeland" else "")
+            or f"Historically accurate wide view of {strip_diacritics(title)}, natural light, no text, no watermark."
+        )
+        scene_prompt_raw = _clean(data.get("scene_prompt"))
+        # Hậu cảnh phải nói đúng địa danh / sự kiện đã chốt (AI viết lệch → bổ sung gợi ý hình ảnh chuẩn).
+        if event is not None and not _mentions_any(f"{background} {scene_prompt_raw}", (*event.aliases, event.name)):
+            background = f"{event.visual_brief} {background}".strip()
+        elif topic_kind == "homeland" and not _mentions_any(background, profile.homeland_aliases):
+            background = f"{profile.homeland_visual} {background}".strip()
+        action = _clean(data.get("character_action"))
+        if scene_mode == SCENE_FOREGROUND_TALKING:
             if not action or not _mentions_any(action, _TALKING_MARKERS):
                 action = _FOREGROUND_ACTION
-            if not scene_prompt:
-                scene_prompt = f"Medium shot at eye level, slow push-in. {action}. Animated background: {background}"
-            elif not _mentions_any(scene_prompt, profile.homeland_aliases):
-                scene_prompt = f"{scene_prompt} Animated background: {background}"
+            default_prompt = f"Medium shot at eye level, slow push-in. {action}. Illustrative background: {background}"
         else:
-            context_key = _clean(data.get("context_key"))
-            event = profile.event(context_key)
-            if event is None:
-                context_key = OTHER_EVENT_KEY
-            background_type = _clean(data.get("background_type")).upper()
-            if background_type not in (BACKGROUND_BATTLEFIELD, BACKGROUND_HISTORICAL_EVENT):
-                background_type = (
-                    BACKGROUND_HISTORICAL_EVENT if event is not None and event.kind == "event" else BACKGROUND_BATTLEFIELD
-                )
-            if not background:
-                background = event.visual_brief if event is not None else (
-                    f"A dramatic, historically accurate scene from the life of {profile.display_name} in "
-                    f"{profile.era_en}, with era-appropriate soldiers, banners and landscape in motion."
-                )
-            event_names = (*event.aliases, event.name) if event is not None else ()
-            if event is not None and not _mentions_any(f"{background} {scene_prompt}", event_names):
-                background = f"{event.visual_brief} {background}".strip()
-            if not action:
+            if not action or _mentions_any(action, _TALKING_MARKERS):
                 action = event.hero_action if event is not None else (
                     "the hero from the reference image leads his troops in the midst of the action, raising his "
                     "sword and giving commands"
                 )
-            if not scene_prompt:
-                scene_prompt = f"Wide cinematic shot, dynamic camera. {action}. Setting: {background}"
-            elif event is not None and not _mentions_any(scene_prompt, event_names):
-                scene_prompt = f"{scene_prompt} Setting: {event.visual_brief}"
+            default_prompt = f"Wide cinematic shot, dynamic camera. {action}. Setting: {background}"
+        scene_prompt = scene_prompt_raw or default_prompt
+        if event is not None and not _mentions_any(scene_prompt, (*event.aliases, event.name)):
+            scene_prompt = f"{scene_prompt} Setting: {event.visual_brief}"
+        reason = _clean(data.get("reason")) or "AI Đạo diễn không nêu lý do."
 
         return SceneDirective(
             state_id=state_id,
-            character_id=profile.character_id,
+            character_id=hero_id,
             question=question,
             scene_mode=scene_mode,
             mouth_sync_enabled=scene_mode == SCENE_FOREGROUND_TALKING,
             character_reference_path=reference,
             background_type=background_type,
-            context_key=context_key,
+            context_key=key,
             background_prompt=background,
             character_action=action,
             scene_prompt=_ensure_reference(scene_prompt, reference),
-            negative_prompt=self.build_negative_prompt(profile.character_id, scene_mode),
-            image_system_prompt=self.build_image_system_prompt(profile.character_id, scene_mode),
+            negative_prompt=self.build_negative_prompt(hero_id, scene_mode),
+            image_system_prompt=self.build_image_system_prompt(hero_id, scene_mode),
             reason=f"{reason}{reason_suffix}",
             decided_by=decided_by,
             cache_hit=False,
@@ -576,36 +727,56 @@ class DirectorAgent:
             key_label=key_label,
             model=model,
             latency_ms=latency_ms,
+            context_topic_key=key,
+            previous_context_topic_key=previous,
+            topic_changed=key != previous,
+            topic_title=title,
+            topic_year=year,
+            topic_kind=topic_kind,
+            question_kind=question_kind,
+            wikimedia_search_query=query,
+            image_allowed=image_allowed,
+            beyond_era=beyond_era,
         )
 
-    def preview(self, character_id: str, question: str) -> SceneDirective:
-        """Quyết định cảnh tức thời, KHÔNG gọi AI: tra DP cache O(1); trượt cache → suy luận theo từ khoá/thực thể.
+    def _remember_topic(self, directive: SceneDirective) -> None:
+        self.topics.put(
+            directive.character_id,
+            directive.context_topic_key,
+            TopicInfo(
+                key=directive.context_topic_key,
+                title=directive.topic_title,
+                year=directive.topic_year,
+                kind=directive.topic_kind,
+                wikimedia_search_query=directive.wikimedia_search_query,
+                background_prompt=directive.background_prompt,
+            ),
+        )
+
+    @staticmethod
+    def _clean_question(question: str) -> str:
+        cleaned = " ".join(str(question or "").split())
+        if not cleaned:
+            raise ValueError("Câu hỏi không được để trống.")
+        return cleaned
+
+    def preview(
+        self, character_id: str, question: str, previous_context_topic_key: str | None = None
+    ) -> SceneDirective:
+        """Quyết định cảnh tức thời, KHÔNG gọi AI (từ khoá / thực thể / thư viện / mã lượt trước).
 
         Dùng để sân khấu đổi cảnh ngay khi người dùng vừa gửi câu hỏi; ``direct()`` sau đó chốt kết quả chính thức.
         """
         profile = get_character(character_id)
-        cleaned = " ".join(str(question or "").split())
-        if not cleaned:
-            raise ValueError("Câu hỏi không được để trống.")
+        cleaned = self._clean_question(question)
+        previous = clean_topic_key(previous_context_topic_key) or None
         started = time.perf_counter()
         fingerprint = self.analyze(profile.character_id, cleaned)
-        lookup = self.cache.lookup(fingerprint)
-        if lookup.state is not None:
-            return dataclasses.replace(
-                lookup.state,
-                question=cleaned,
-                decided_by="cache",
-                cache_hit=True,
-                cache_match=lookup.decision.match_type,
-                cache_similarity=round(lookup.decision.similarity, 4),
-                key_label=None,
-                model=None,
-                latency_ms=(time.perf_counter() - started) * 1000.0,
-            )
         return self._finalize_directive(
             profile,
             cleaned,
-            self._rule_based_decision(profile, fingerprint),
+            self._rule_based_decision(profile, fingerprint, cleaned, previous),
+            previous=previous,
             state_id=self.cache.new_state_id(),
             decided_by="rule_preview",
             key_label=None,
@@ -613,33 +784,44 @@ class DirectorAgent:
             latency_ms=(time.perf_counter() - started) * 1000.0,
         )
 
-    async def direct(self, character_id: str, question: str, *, avoid_keys: Iterable[int] = ()) -> SceneDirective:
-        """Đạo diễn phân cảnh: tra cache O(1) → gọi AI (JSON schema) → ép bất biến → lưu cache."""
+    async def direct(
+        self,
+        character_id: str,
+        question: str,
+        *,
+        previous_context_topic_key: str | None = None,
+        avoid_keys: Iterable[int] = (),
+    ) -> SceneDirective:
+        """Đạo diễn bối cảnh: (câu hỏi nêu thực thể đã biết → tra cache O(1)) → gọi AI chọn mã → code chốt luật."""
         profile = get_character(character_id)
-        cleaned = " ".join(str(question or "").split())
-        if not cleaned:
-            raise ValueError("Câu hỏi không được để trống.")
+        cleaned = self._clean_question(question)
+        previous = clean_topic_key(previous_context_topic_key) or None
         started = time.perf_counter()
         fingerprint = self.analyze(profile.character_id, cleaned)
-        lookup = self.cache.lookup(fingerprint)
-        if lookup.state is not None:
-            return dataclasses.replace(
-                lookup.state,
-                question=cleaned,
-                decided_by="cache",
-                cache_hit=True,
-                cache_match=lookup.decision.match_type,
-                cache_similarity=round(lookup.decision.similarity, 4),
-                key_label=None,
-                model=None,
-                latency_ms=(time.perf_counter() - started) * 1000.0,
-            )
+        if fingerprint.entities:
+            lookup = self.cache.lookup(fingerprint)
+            if lookup.state is not None and lookup.state.context_topic_key:
+                state = lookup.state
+                return dataclasses.replace(
+                    state,
+                    question=cleaned,
+                    decided_by="cache",
+                    cache_hit=True,
+                    cache_match=lookup.decision.match_type,
+                    cache_similarity=round(lookup.decision.similarity, 4),
+                    key_label=None,
+                    model=None,
+                    latency_ms=(time.perf_counter() - started) * 1000.0,
+                    previous_context_topic_key=previous,
+                    topic_changed=state.context_topic_key != previous,
+                    beyond_era=state.beyond_era or detect_era_boundary(profile.character_id, cleaned) is not None,
+                )
 
         state_id = self.cache.new_state_id()
         try:
             result = await self._pool.generate(
                 self.models,
-                self.build_scene_payload(profile.character_id, cleaned),
+                self.build_scene_payload(profile.character_id, cleaned, previous),
                 tag=f"director:scene:{profile.character_id}",
                 avoid_keys=avoid_keys,
                 request_timeout_s=self.request_timeout_s,
@@ -648,6 +830,7 @@ class DirectorAgent:
                 profile,
                 cleaned,
                 _parse_json_object(result.text),
+                previous=previous,
                 state_id=state_id,
                 decided_by="llm",
                 key_label=result.key_label,
@@ -655,10 +838,11 @@ class DirectorAgent:
                 latency_ms=(time.perf_counter() - started) * 1000.0,
             )
         except (KeyPoolError, ValueError) as exc:
-            directive = self._finalize_directive(
+            return self._finalize_directive(
                 profile,
                 cleaned,
-                self._rule_based_decision(profile, fingerprint),
+                self._rule_based_decision(profile, fingerprint, cleaned, previous),
+                previous=previous,
                 state_id=state_id,
                 decided_by="rule_fallback",
                 key_label=None,
@@ -666,14 +850,15 @@ class DirectorAgent:
                 latency_ms=(time.perf_counter() - started) * 1000.0,
                 reason_suffix=f" (AI Đạo diễn không khả dụng: {type(exc).__name__}: {exc})",
             )
-            return directive
-        self.cache.store(
-            fingerprint,
-            directive,
-            state_id=state_id,
-            scene_mode=directive.scene_mode,
-            context_key=directive.context_key,
-        )
+        self._remember_topic(directive)
+        if fingerprint.entities:
+            self.cache.store(
+                fingerprint,
+                directive,
+                state_id=state_id,
+                scene_mode=directive.scene_mode,
+                context_key=directive.context_key,
+            )
         return directive
 
     # ------------------------------------------------------------------ storyboard
@@ -747,8 +932,18 @@ class DirectorAgent:
         )
 
     # ------------------------------------------------------------------ điều phối multi-agent
-    async def run_scene(self, actor: ActorAgent, character_id: str, question: str) -> AsyncIterator[TurnEvent]:
-        """Một lượt hỏi–đáp: AI Nhân vật (stream) và AI Đạo diễn chạy song song, rồi storyboard."""
+    async def run_scene(
+        self,
+        actor: ActorAgent,
+        character_id: str,
+        question: str,
+        *,
+        previous_context_topic_key: str | None = None,
+    ) -> AsyncIterator[TurnEvent]:
+        """Một lượt hỏi–đáp: AI Nhân vật (stream) và AI Đạo diễn chạy song song, rồi storyboard.
+
+        ``previous_context_topic_key`` do frontend gửi kèm mỗi request (backend không giữ trạng thái phiên).
+        """
         profile = get_character(character_id)
         cleaned = " ".join(str(question or "").split())
         if not cleaned:
@@ -782,7 +977,9 @@ class DirectorAgent:
 
         async def director_task() -> None:
             try:
-                directive = await self.direct(profile.character_id, cleaned)
+                directive = await self.direct(
+                    profile.character_id, cleaned, previous_context_topic_key=previous_context_topic_key
+                )
                 directives.append(directive)
                 await queue.put(TurnEvent("scene", now_ms(), directive))
             except Exception as exc:

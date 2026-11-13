@@ -20,6 +20,7 @@ from typing import Any
 
 from ..core.dp_optimizer import DEFAULT_MS_PER_SYLLABLE, PAUSE_MS, count_syllables, is_sentence_punct, scan_text
 from ..core.key_pool import GeminiKeyPool
+from .history_rules import ERA_BOUNDARY_OPENING, detect_era_boundary
 
 __all__ = [
     "CHARACTERS",
@@ -809,8 +810,14 @@ class ActorAgent:
             "nhiều thuyết thì nêu thuyết phổ biến trước rồi nói rõ còn thuyết khác.\n"
             "- Không bịa số liệu, ngày tháng, lời nói hay nhân vật. Điều gì sử không chép rõ thì nói thẳng là sử "
             "sách chép chưa tường.\n"
-            "- Câu hỏi gán nhầm sự kiện cho ngươi thì ôn tồn đính chính; câu hỏi ngoài cuộc đời ngươi thì khéo léo "
-            "đưa câu chuyện về những điều ngươi đã trải qua.\n\n"
+            "- Câu hỏi gán nhầm sự kiện cho ngươi thì ôn tồn đính chính. Trận đánh ngươi không trực tiếp cầm quân "
+            "thì kể như người đời sau nhìn lại chiến tích, không nhận là mình đã đánh.\n\n"
+            "GIỚI HẠN NHẬN THỨC THỜI ĐẠI (bắt buộc)\n"
+            "- Khi câu hỏi nhắc tới quốc gia, địa danh, sự kiện, công trình hay khái niệm mà sinh thời ngươi chưa "
+            "thể biết (ví dụ nước Nga, châu Mỹ, máy bay...), câu ĐẦU TIÊN phải nói rõ: \"Thời ta chưa biết đến xứ "
+            "ấy...\" (hoặc lời cổ phong tương đương khẳng định sinh thời ngươi chưa biết tới điều đó).\n"
+            "- Sau câu đó mới kể tiếp theo góc nhìn hậu thế (\"nghe hậu thế kể lại...\"), ngắn gọn, đúng sự thật, "
+            "rồi có thể liên hệ với điều ngươi từng trải.\n\n"
             f"SỔ TAY SỬ LIỆU — {profile.display_name.upper()}\n"
             f"- Tên: {profile.full_name}. Tước hiệu, danh xưng: {', '.join(profile.titles)}.\n"
             f"- Sinh: {profile.birth}.\n"
@@ -844,9 +851,18 @@ class ActorAgent:
         }
         if self.thinking_level:
             generation_config["thinkingConfig"] = {"thinkingLevel": self.thinking_level}
+        user_text = cleaned
+        # Luật 2 chốt bằng code: câu hỏi về xứ sở / sự vật ngoài thời đại → nhắc bắt buộc mở đầu xác định ranh giới.
+        boundary = detect_era_boundary(profile.character_id, cleaned)
+        if boundary is not None:
+            user_text = (
+                f"{cleaned}\n\n[Ghi chú cho người nhập vai: câu hỏi nhắc tới {boundary.label} — điều sinh thời "
+                f"{profile.display_name} chưa biết tới. Câu đầu tiên BẮT BUỘC mở đầu bằng \"{ERA_BOUNDARY_OPENING}\" "
+                "rồi mới kể theo lời hậu thế kể lại. Không nhắc tới ghi chú này.]"
+            )
         return {
             "systemInstruction": {"parts": [{"text": self.build_system_prompt(profile.character_id)}]},
-            "contents": [{"role": "user", "parts": [{"text": cleaned}]}],
+            "contents": [{"role": "user", "parts": [{"text": user_text}]}],
             "generationConfig": generation_config,
         }
 

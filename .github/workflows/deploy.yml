@@ -36,10 +36,12 @@ jobs:
         working-directory: frontend
         env:
           VITE_BASE: /daivietsuky/
-          # Tùy chọn: địa chỉ backend đã deploy (Render/HF). Đặt ở repo → Settings → Secrets and variables →
-          # Actions → Variables → VITE_API_BASE_URL. Bỏ trống thì trang tự chạy engine trong trình duyệt.
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
-        run: npm run build
+          # Địa chỉ backend mặc định nằm trong frontend/.env.production (URL Render). Muốn đổi thì đặt biến
+          # repo → Settings → Secrets and variables → Actions → Variables → VITE_API_BASE_URL.
+          API_BASE_OVERRIDE: ${{ vars.VITE_API_BASE_URL }}
+        run: |
+          if [ -n "$API_BASE_OVERRIDE" ]; then export VITE_API_BASE_URL="$API_BASE_OVERRIDE"; fi
+          npm run build
 
       - name: Publish to gh-pages
         uses: peaceiris/actions-gh-pages@v4

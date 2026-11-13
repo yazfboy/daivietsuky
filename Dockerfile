@@ -15,6 +15,8 @@ RUN pip install -r backend/requirements.txt
 # Mã nguồn backend + ảnh mẫu anh hùng gốc (rig/meta) để phục vụ /assets và dựng cảnh
 COPY backend ./backend
 COPY frontend/public/assets/heroes ./frontend/public/assets/heroes
+# Thư viện cảnh dựng sẵn do nhóm duyệt (ảnh nền theo context_topic_key)
+COPY frontend/public/assets/scenes ./frontend/public/assets/scenes
 
 EXPOSE 8000
 

@@ -99,6 +99,23 @@ export interface SceneData {
   activeChunk?: SpeechChunkData | null;
   /** Nguồn quyết định cảnh của AI Đạo diễn: llm | cache | rule_preview | rule_fallback | local */
   decidedBy?: string;
+  /** Mã bối cảnh chuẩn hóa (snake_case) do backend chốt — gửi lại ở lượt sau làm previousContextTopicKey. */
+  contextTopicKey?: string;
+  /** Ảnh nền do backend chọn (thư viện → Wikimedia → phông trung tính). Không có ở chế độ offline. */
+  backdrop?: BackdropInfo;
+}
+
+/** Ảnh nền theo bối cảnh + ghi nguồn. Mọi trường là chữ thuần (hiển thị dạng text, không render HTML). */
+export interface BackdropInfo {
+  source: 'library' | 'wikimedia' | 'neutral';
+  contextTopicKey: string;
+  title: string;
+  subtitle?: string;
+  imageUrl?: string;
+  author?: string;
+  license?: string;
+  licenseUrl?: string;
+  sourceUrl?: string;
 }
 
 export interface DynamicHeroStageProps {

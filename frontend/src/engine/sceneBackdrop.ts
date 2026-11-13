@@ -12,7 +12,16 @@ import type { BackgroundType, HeroId, SceneMode } from '../types/hero';
 
 const TAU = Math.PI * 2;
 
-export type BackdropTheme = 'homeland' | 'naval' | 'land' | 'hall';
+/**
+ * 'photo'   : ảnh nền do backend chọn (thư viện dựng sẵn / Wikimedia) — không vẽ thêm lớp thủ tục nào lên ảnh.
+ * 'neutral' : phông trung tính (nền giấy dó, nét bản đồ mờ + tên địa danh) khi không có ảnh đạt chuẩn.
+ */
+export type BackdropTheme = 'homeland' | 'naval' | 'land' | 'hall' | 'photo' | 'neutral';
+
+export interface BackdropLabel {
+  title: string;
+  subtitle?: string;
+}
 
 export interface BackdropCamera {
   /** −1..1, độ lệch ngang của máy quay */
@@ -324,9 +333,12 @@ export class SceneBackdrop {
   private trees: Array<{ x: number; scale: number; phase: number }> = [];
   private farFires: FirePoint[] = [];
 
-  constructor(theme: BackdropTheme, heroId: HeroId, contextKey: string) {
+  private readonly label: BackdropLabel | null;
+
+  constructor(theme: BackdropTheme, heroId: HeroId, contextKey: string, label: BackdropLabel | null = null) {
     this.theme = theme;
     this.heroId = heroId;
+    this.label = label;
     this.style = HOMELAND_STYLES[heroId];
     this.seed = hashString(`${theme}:${heroId}:${contextKey}`);
     this.populate();
@@ -455,7 +467,9 @@ export class SceneBackdrop {
     const w = width;
     const h = height;
     const H0 = this.horizon();
-    if (this.theme === 'homeland') {
+    if (this.theme === 'neutral' || this.theme === 'photo') {
+      this.paintPaper(ctx, w, h, rng, this.theme === 'neutral');
+    } else if (this.theme === 'homeland') {
       const s = this.style;
       const sky = ctx.createLinearGradient(0, 0, 0, H0);
       sky.addColorStop(0, s.sky[0]);
@@ -613,6 +627,11 @@ export class SceneBackdrop {
       }
     });
     switch (this.theme) {
+      case 'photo':
+        break;
+      case 'neutral':
+        this.drawNeutralLight(ctx, t);
+        break;
       case 'homeland':
         this.drawHomeland(ctx, t, dt, camera);
         break;
@@ -625,6 +644,95 @@ export class SceneBackdrop {
       default:
         this.drawHall(ctx, t, dt, camera);
     }
+    ctx.restore();
+  }
+
+  /** Nền giấy dó: sắc ngà, xơ giấy, nét bản đồ cổ mờ; ``withLabel`` thì in tên địa danh. */
+  private paintPaper(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Rng, withLabel: boolean): void {
+    const base = ctx.createLinearGradient(0, 0, w, h);
+    base.addColorStop(0, '#e9dcc0');
+    base.addColorStop(0.55, '#dccaa2');
+    base.addColorStop(1, '#c4ad7f');
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, w, h);
+    // Xơ giấy dó.
+    ctx.lineWidth = 1;
+    for (let i = 0; i < Math.round((w * h) / 2600); i += 1) {
+      const x = rng() * w;
+      const y = rng() * h;
+      const len = 4 + rng() * 16;
+      const a = rng() * TAU;
+      ctx.strokeStyle = `rgba(${rng() < 0.5 ? '120,96,60' : '255,250,235'},${0.06 + rng() * 0.1})`;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x + Math.cos(a) * len * 0.5 + 2, y + Math.sin(a) * len * 0.5 - 2, x + Math.cos(a) * len, y + Math.sin(a) * len);
+      ctx.stroke();
+    }
+    // Lưới kinh vĩ + đường bờ sông/biển mờ kiểu dư đồ cổ.
+    ctx.strokeStyle = 'rgba(92,64,36,0.12)';
+    for (let i = 1; i < 8; i += 1) {
+      ctx.beginPath();
+      ctx.moveTo((w * i) / 8, 0);
+      ctx.lineTo((w * i) / 8, h);
+      ctx.stroke();
+    }
+    for (let i = 1; i < 5; i += 1) {
+      ctx.beginPath();
+      ctx.moveTo(0, (h * i) / 5);
+      ctx.lineTo(w, (h * i) / 5);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(92,64,36,0.22)';
+    ctx.lineWidth = 1.5;
+    for (let line = 0; line < 3; line += 1) {
+      const y0 = h * (0.3 + line * 0.22);
+      const amp = h * (0.03 + rng() * 0.04);
+      const phase = rng() * TAU;
+      ctx.beginPath();
+      for (let i = 0; i <= 48; i += 1) {
+        const x = (w * i) / 48;
+        const y = y0 + Math.sin((i / 48) * TAU * (1.2 + line * 0.4) + phase) * amp + Math.sin(i * 1.7) * amp * 0.15;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // Viền ố vàng.
+    const edge = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.75);
+    edge.addColorStop(0, 'rgba(120,84,40,0)');
+    edge.addColorStop(1, 'rgba(96,62,28,0.45)');
+    ctx.fillStyle = edge;
+    ctx.fillRect(0, 0, w, h);
+    if (withLabel && this.label?.title) {
+      const size = Math.max(22, Math.min(64, w * 0.042));
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(58,38,20,0.78)';
+      ctx.font = `600 ${size}px "Cormorant Garamond", "Noto Serif", Georgia, serif`;
+      ctx.fillText(this.label.title, w * 0.6, h * 0.2, w * 0.7);
+      if (this.label.subtitle) {
+        ctx.fillStyle = 'rgba(58,38,20,0.55)';
+        ctx.font = `500 ${size * 0.5}px "Cormorant Garamond", "Noto Serif", Georgia, serif`;
+        ctx.fillText(this.label.subtitle, w * 0.6, h * 0.2 + size * 0.95, w * 0.6);
+      }
+      ctx.strokeStyle = 'rgba(58,38,20,0.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.6 - size * 3, h * 0.2 + size * (this.label.subtitle ? 1.55 : 0.8));
+      ctx.lineTo(w * 0.6 + size * 3, h * 0.2 + size * (this.label.subtitle ? 1.55 : 0.8));
+      ctx.stroke();
+    }
+  }
+
+  /** Vệt sáng trôi chậm trên nền giấy (chuyển động nhẹ, không thêm chi tiết cảnh). */
+  private drawNeutralLight(ctx: CanvasRenderingContext2D, t: number): void {
+    const w = this.width;
+    const h = this.height;
+    const x = (0.35 + 0.25 * Math.sin(t * 0.07)) * w;
+    const y = (0.4 + 0.1 * Math.cos(t * 0.05)) * h;
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.drawImage(this.sprites.glowSoft, x - 0.4 * w, y - 0.4 * w, 0.8 * w, 0.8 * w);
     ctx.restore();
   }
 

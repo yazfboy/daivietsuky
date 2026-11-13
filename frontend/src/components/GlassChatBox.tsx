@@ -4,6 +4,7 @@ import {
   ArrowUp,
   Eye,
   Film,
+  Loader2,
   MapPin,
   MessageSquare,
   PanelLeft,
@@ -32,6 +33,8 @@ export interface GlassChatBoxProps {
   onSelectPrompt: (prompt: SuggestedPrompt) => void;
   onToggleSceneMode: (mode: SceneMode) => void;
   onResetChat: () => void;
+  /** Máy chủ (Render) đang được đánh thức qua GET /health: tạm khóa gửi câu hỏi. */
+  serverWaking?: boolean;
 }
 
 /**
@@ -52,7 +55,10 @@ export const GlassChatBox: React.FC<GlassChatBoxProps> = ({
   onSelectPrompt,
   onToggleSceneMode,
   onResetChat,
+  serverWaking = false,
 }) => {
+  // Đang trả lời hoặc đang đánh thức máy chủ → không cho gửi câu hỏi mới.
+  const sendLocked = isStreaming || serverWaking;
   const [inputText, setInputText] = useState('');
   const [isStagePeekMode, setIsStagePeekMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -65,7 +71,7 @@ export const GlassChatBox: React.FC<GlassChatBoxProps> = ({
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     const trimmed = inputText.trim();
-    if (!trimmed || isStreaming) return;
+    if (!trimmed || sendLocked) return;
     setInputText('');
     onSendMessage(trimmed);
   };
@@ -238,7 +244,7 @@ export const GlassChatBox: React.FC<GlassChatBoxProps> = ({
                     <button
                       key={prompt.id}
                       type="button"
-                      disabled={isStreaming}
+                      disabled={sendLocked}
                       onClick={() => onSelectPrompt(prompt)}
                       className="group flex items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-3.5 py-1.5 text-xs text-zinc-200 backdrop-blur-xs transition-all duration-200 hover:border-[#D4B982]/45 hover:bg-white/[0.10] hover:text-white disabled:opacity-50"
                     >
@@ -324,6 +330,17 @@ export const GlassChatBox: React.FC<GlassChatBoxProps> = ({
 
           {/* Khung Nhập Liệu Dạng Viên Thuốc (Chat Input Capsule lấy từ format character.ai) */}
           <div className="border-t border-white/[0.07] bg-[#0E1015]/55 px-4 pt-3 pb-2.5 backdrop-blur-xl sm:px-6">
+            {serverWaking && (
+              <div
+                data-testid="server-waking"
+                role="status"
+                aria-live="polite"
+                className="mx-auto mb-2 flex w-full max-w-2xl items-center justify-center gap-2 text-xs text-[#D4B982]"
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Đang đánh thức máy chủ…</span>
+              </div>
+            )}
             <form
               onSubmit={handleSubmit}
               className="mx-auto flex w-full max-w-2xl items-center gap-2 rounded-full border border-white/[0.12] bg-[#171A22]/80 py-1.5 pr-2 pl-5 shadow-inner transition-colors duration-200 focus-within:border-[#D4B982]/50"
@@ -342,10 +359,10 @@ export const GlassChatBox: React.FC<GlassChatBoxProps> = ({
               <button
                 type="submit"
                 data-testid="chat-send-button"
-                disabled={!inputText.trim() || isStreaming}
-                aria-label="Gửi câu hỏi"
+                disabled={!inputText.trim() || sendLocked}
+                aria-label={serverWaking ? 'Đang đánh thức máy chủ' : 'Gửi câu hỏi'}
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200 ${
-                  inputText.trim() && !isStreaming
+                  inputText.trim() && !sendLocked
                     ? 'bg-[#D4B982] text-[#0B0C0E] hover:bg-[#E2C994] scale-100'
                     : 'bg-white/[0.08] text-zinc-500 scale-95 cursor-not-allowed'
                 }`}
