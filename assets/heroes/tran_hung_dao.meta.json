@@ -1,0 +1,25 @@
+{
+ "character_id": "tran_hung_dao",
+ "source": "wikimedia",
+ "generation": {
+  "fallback_reason": "uggingface.co/settings/tokens | ByteDance/SDXL-Lightning: AppError: 'RuntimeError' | Không Space nào tạo được ảnh: black-forest-labs/FLUX.1-schnell: AppError: You have exceeded your ZeroGPU quota (90s requested vs. 0s left). Try again in 0:00:00. Authenticate with a Hugging Face token for more quota - https://huggingface.co/settings/tokens | Không Space nào tạo được ảnh: black-forest-labs/FLUX.1-schnell: AppError: You have exceeded your ZeroGPU quota (90s requested vs. 0s left). Try again in 0:00:00. Authenticate with a Hugging Face token for more quota - https://huggingface.co/settings/tokens",
+  "cutout": "flood"
+ },
+ "iconography": "A middle-aged Vietnamese nobleman with a calm, dignified expression. He has a thin mustache and a long, pointed black goatee. He wears a traditional black 'phu duc' cap with side wings. His attire is a rich, red silk court robe embroidered with golden dragon patterns, secured by a jade-encrusted belt. He sits formally on a wooden throne, hands resting gracefully, embodying scholarly and military authority.",
+ "wikimedia_reference": {
+  "title": "File:Painting of Trần Hưng Đạo (1228 - 1300), Nguyễn dynasty, Vietnam.jpg",
+  "page_url": "https://commons.wikimedia.org/wiki/File:Painting_of_Tr%E1%BA%A7n_H%C6%B0ng_%C4%90%E1%BA%A1o_(1228_-_1300),_Nguy%E1%BB%85n_dynasty,_Vietnam.jpg",
+  "thumb_url": "https://upload.wikimedia.org/wikipedia/commons/5/5f/Painting_of_Tr%E1%BA%A7n_H%C6%B0ng_%C4%90%E1%BA%A1o_%281228_-_1300%29%2C_Nguy%E1%BB%85n_dynasty%2C_Vietnam.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+  "width": 720,
+  "height": 960,
+  "mime": "image/jpeg",
+  "license": "Public domain",
+  "artist": "Unknown author Unknown author"
+ },
+ "wikimedia_reference_score": 9,
+ "size": [
+  720,
+  960
+ ],
+ "created_at": "2026-11-12T19:35:08"
+}

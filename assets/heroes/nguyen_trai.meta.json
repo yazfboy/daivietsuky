@@ -1,0 +1,41 @@
+{
+ "character_id": "nguyen_trai",
+ "source": "huggingface:black-forest-labs/FLUX.1-schnell",
+ "generation": {
+  "space_id": "black-forest-labs/FLUX.1-schnell",
+  "seed": 353194635,
+  "prompt": "Portrait of Nguyễn Trãi, Vietnamese Confucian scholar-strategist of the early Lê dynasty, early 15th-century Đại Việt (Lam Sơn uprising and early Lê dynasty). An elderly scholar-official with a weathered face and a long, wispy white beard and mustache. He wears a black winged official hat (ô sa) and a voluminous, light blue silk robe decorated with intricate golden cloud and dragon patterns. Seated formally, his hands are hidden within his wide sleeves. He exudes an air of dignified wisdom and solemnity befitting a high-ranking advisor.. Knee-length three-quarter body portrait, standing upright and facing the viewer frontally, centered, symmetrical stance, both arms relaxed along the sides with both hands fully visible inside the frame, holding a rolled paper scroll in his left hand. Calm dignified expression, lips gently closed, mouth clearly visible. Isolated on a plain flat solid bright green background (#00FF00), no shadows, no scenery, no other people, no text. Even soft studio lighting, highly detailed historical oil painting.",
+  "elapsed_s": 11.45,
+  "verify": {
+   "single_person": true,
+   "frontal": true,
+   "body_framing_ok": true,
+   "hands_ok": true,
+   "mouth_visible_closed": false,
+   "plain_background": true,
+   "historical_costume": true,
+   "matches_description": 7,
+   "overall": 7,
+   "issues": "Mouth is obscured by the beard. Hands are visible holding a scroll despite the prompt requesting them hidden. Minor anatomical blending on the left hand."
+  },
+  "score": 5.4,
+  "cutout": "flood"
+ },
+ "iconography": "An elderly scholar-official with a weathered face and a long, wispy white beard and mustache. He wears a black winged official hat (ô sa) and a voluminous, light blue silk robe decorated with intricate golden cloud and dragon patterns. Seated formally, his hands are hidden within his wide sleeves. He exudes an air of dignified wisdom and solemnity befitting a high-ranking advisor.",
+ "wikimedia_reference": {
+  "title": "File:Nguyen Trai.jpg",
+  "page_url": "https://commons.wikimedia.org/wiki/File:Nguyen_Trai.jpg",
+  "thumb_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c6/Nguyen_Trai.jpg/960px-Nguyen_Trai.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+  "width": 1280,
+  "height": 1906,
+  "mime": "image/jpeg",
+  "license": "Public domain",
+  "artist": "Unknown author Unknown author"
+ },
+ "wikimedia_reference_score": 10,
+ "size": [
+  896,
+  1152
+ ],
+ "created_at": "2026-11-12T19:35:10"
+}
