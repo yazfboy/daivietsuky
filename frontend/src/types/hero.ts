@@ -99,6 +99,8 @@ export interface SceneData {
   activeChunk?: SpeechChunkData | null;
   /** Nguồn quyết định cảnh của AI Đạo diễn: llm | cache | rule_preview | rule_fallback | local */
   decidedBy?: string;
+  /** Backend cho phép chế độ BACKGROUND_ACTION với bối cảnh này (key thuộc HERO_EVENTS của nhân vật). */
+  actionAllowed?: boolean;
   /** Mã bối cảnh chuẩn hóa (snake_case) do backend chốt — gửi lại ở lượt sau làm previousContextTopicKey. */
   contextTopicKey?: string;
   /** Ảnh nền do backend chọn (thư viện → Wikimedia → phông trung tính). Không có ở chế độ offline. */
@@ -116,6 +118,8 @@ export interface BackdropInfo {
   license?: string;
   licenseUrl?: string;
   sourceUrl?: string;
+  /** Chú thích ảnh, vd. "Hoàng thành Thăng Long ngày nay" (công trình dựng sau sự kiện). */
+  caption?: string;
 }
 
 export interface DynamicHeroStageProps {

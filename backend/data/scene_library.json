@@ -1,5 +1,5 @@
 {
-  "_note": "Thư viện cảnh dựng sẵn — key (context_topic_key) → ảnh nền + ghi nguồn. Nhóm tự chọn & duyệt ảnh, đặt file vào frontend/public/assets/scenes/{key}.jpg rồi điền image/author/license/source_url. Mục nào thiếu ảnh hoặc thiếu tác giả/giấy phép thì bị bỏ qua: hệ thống tìm Wikimedia Commons, không được thì dùng phông trung tính.",
+  "_note": "Thư viện cảnh dựng sẵn — key (context_topic_key) → ảnh nền + ghi nguồn. Nhóm tự chọn & duyệt ảnh, đặt file vào frontend/public/assets/scenes/{key}.jpg rồi điền image/author/license/source_url. Mục nào thiếu ảnh hoặc thiếu tác giả/giấy phép thì bị bỏ qua: hệ thống tìm Wikimedia Commons, không được thì dùng phông trung tính. neutral_only=true: chỉ dùng phông trung tính, không tìm Wikimedia. caption: chú thích hiện cạnh dòng ghi nguồn (vd. công trình dựng sau sự kiện → '... ngày nay').",
   "version": 1,
   "scenes": {
     "bach_dang_1288": {
@@ -15,11 +15,14 @@
         "bach_dang_hai_khau"
       ],
       "wikimedia_search_query": "Bach Dang River Quang Ninh",
-      "image": "/assets/scenes/bach_dang_1288.jpg",
-      "author": "Bùi Thụy Đào Nguyên",
-      "license": "CC BY-SA 3.0",
-      "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
-      "source_url": "https://commons.wikimedia.org/wiki/File:C%E1%BB%8Dc_B%E1%BA%A1ch_%C4%90%E1%BA%B1ng.jpg"
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": "",
+      "caption": "",
+      "neutral_only": true,
+      "review_note": "Gỡ ảnh 'Cọc Bạch Đằng.jpg': là ảnh chụp lại một bức tranh; Commons chỉ ghi người chụp (Bùi Thụy Đào Nguyên, 2014, CC BY-SA 3.0), không rõ họa sĩ, năm vẽ, nơi trưng bày — chưa xác minh được."
     },
     "khang_chien_mong_nguyen_1285": {
       "title": "Kháng chiến chống Nguyên Mông lần thứ hai",
@@ -31,11 +34,14 @@
         "khang_chien_mong_nguyen_lan_2"
       ],
       "wikimedia_search_query": "Kiep Bac temple Chi Linh",
-      "image": "/assets/scenes/khang_chien_mong_nguyen_1285.jpg",
-      "author": "André Salles",
-      "license": "Public domain",
+      "image": "",
+      "author": "",
+      "license": "",
       "license_url": "",
-      "source_url": "https://commons.wikimedia.org/wiki/File:Ki%E1%BA%BFp_B%E1%BA%A1c_temple_in_1904.jpg"
+      "source_url": "",
+      "caption": "",
+      "neutral_only": true,
+      "review_note": "Gỡ ảnh đền Kiếp Bạc (1904): đền thờ lập sau khi Trần Hưng Đạo mất, không phải cảnh năm 1285."
     },
     "khang_chien_mong_nguyen_1287_1288": {
       "title": "Kháng chiến chống Nguyên Mông lần thứ ba",
@@ -49,11 +55,14 @@
         "khang_chien_mong_nguyen_1288"
       ],
       "wikimedia_search_query": "Bach Dang River Quang Ninh",
-      "image": "/assets/scenes/khang_chien_mong_nguyen_1287_1288.jpg",
-      "author": "Unknown author",
-      "license": "CC0",
-      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
-      "source_url": "https://commons.wikimedia.org/wiki/File:Battle_of_Bach_Dang_river.jpg"
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": "",
+      "caption": "",
+      "neutral_only": true,
+      "review_note": "Gỡ ảnh 'Battle of Bach Dang river.jpg': tác giả không rõ, lấy từ bài viết 2014 của Bảo tàng Lịch sử Quốc gia, CC0 do người tải lên (2025) tự gán, danh mục '1288 works' sai — chưa xác minh được."
     },
     "van_don_1288": {
       "title": "Trận Vân Đồn",
@@ -68,7 +77,9 @@
       "author": "Phó Nháy",
       "license": "Public domain",
       "license_url": "",
-      "source_url": "https://commons.wikimedia.org/wiki/File:Battle_of_V%C3%A2n_%C4%90%E1%BB%93n.jpg"
+      "source_url": "https://commons.wikimedia.org/wiki/File:Battle_of_V%C3%A2n_%C4%90%E1%BB%93n.jpg",
+      "caption": "Vùng biển Vân Đồn ngày nay",
+      "neutral_only": false
     },
     "chuong_duong_ham_tu_1285": {
       "title": "Trận Chương Dương – Hàm Tử",
@@ -85,7 +96,10 @@
       "author": "",
       "license": "",
       "license_url": "",
-      "source_url": ""
+      "source_url": "",
+      "caption": "",
+      "neutral_only": true,
+      "review_note": "Chưa có ảnh đạt chuẩn."
     },
     "hich_tuong_si": {
       "title": "Hịch tướng sĩ",
@@ -96,11 +110,14 @@
         "hich_tuong_si_1284"
       ],
       "wikimedia_search_query": "Kiep Bac temple Chi Linh",
-      "image": "/assets/scenes/hich_tuong_si.jpg",
-      "author": "André Salles",
-      "license": "Public domain",
+      "image": "",
+      "author": "",
+      "license": "",
       "license_url": "",
-      "source_url": "https://commons.wikimedia.org/wiki/File:Ki%E1%BA%BFp_B%E1%BA%A1c_temple_in_1904.jpg"
+      "source_url": "",
+      "caption": "",
+      "neutral_only": true,
+      "review_note": "Gỡ ảnh đền Kiếp Bạc (1904): đền thờ lập sau khi Trần Hưng Đạo mất, không phải cảnh viết Hịch tướng sĩ."
     },
     "dien_hong_1284": {
       "title": "Hội nghị Diên Hồng",
@@ -116,7 +133,9 @@
       "author": "Christophe95",
       "license": "CC BY-SA 4.0",
       "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
-      "source_url": "https://commons.wikimedia.org/wiki/File:Backyard_of_the_K%C3%ADnh_Thi%C3%AAn_Palace.jpg"
+      "source_url": "https://commons.wikimedia.org/wiki/File:Backyard_of_the_K%C3%ADnh_Thi%C3%AAn_Palace.jpg",
+      "caption": "Hoàng thành Thăng Long ngày nay",
+      "neutral_only": false
     },
     "chi_lang_xuong_giang_1427": {
       "title": "Chiến thắng Chi Lăng – Xương Giang",
@@ -133,7 +152,9 @@
       "author": "Bùi Thụy Đào Nguyên",
       "license": "CC BY-SA 3.0",
       "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
-      "source_url": "https://commons.wikimedia.org/wiki/File:Chi_L%C4%83ng_2.jpg"
+      "source_url": "https://commons.wikimedia.org/wiki/File:Chi_L%C4%83ng_2.jpg",
+      "caption": "Ải Chi Lăng (Lạng Sơn) ngày nay",
+      "neutral_only": false
     },
     "tot_dong_chuc_dong_1426": {
       "title": "Trận Tốt Động – Chúc Động",
@@ -150,7 +171,10 @@
       "author": "",
       "license": "",
       "license_url": "",
-      "source_url": ""
+      "source_url": "",
+      "caption": "",
+      "neutral_only": true,
+      "review_note": "Chưa có ảnh đạt chuẩn đúng chiến trường."
     },
     "dong_quan_hoi_the_1427": {
       "title": "Hội thề Đông Quan",
@@ -165,7 +189,9 @@
       "author": "Phan Minh Tuấn",
       "license": "CC BY-SA 4.0",
       "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
-      "source_url": "https://commons.wikimedia.org/wiki/File:%C4%90oan_M%C3%B4n,_Ho%C3%A0ng_th%C3%A0nh_Th%C4%83ng_Long,_H%C3%A0_N%E1%BB%99i_003.JPG"
+      "source_url": "https://commons.wikimedia.org/wiki/File:%C4%90oan_M%C3%B4n,_Ho%C3%A0ng_th%C3%A0nh_Th%C4%83ng_Long,_H%C3%A0_N%E1%BB%99i_003.JPG",
+      "caption": "Đoan Môn, Hoàng thành Thăng Long ngày nay",
+      "neutral_only": false
     },
     "binh_ngo_dai_cao_1428": {
       "title": "Bình Ngô đại cáo",
@@ -180,7 +206,9 @@
       "author": "Phan Minh Tuấn",
       "license": "CC BY-SA 4.0",
       "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
-      "source_url": "https://commons.wikimedia.org/wiki/File:%C4%90oan_M%C3%B4n,_Ho%C3%A0ng_th%C3%A0nh_Th%C4%83ng_Long,_H%C3%A0_N%E1%BB%99i_002.JPG"
+      "source_url": "https://commons.wikimedia.org/wiki/File:%C4%90oan_M%C3%B4n,_Ho%C3%A0ng_th%C3%A0nh_Th%C4%83ng_Long,_H%C3%A0_N%E1%BB%99i_002.JPG",
+      "caption": "Đoan Môn, Hoàng thành Thăng Long ngày nay",
+      "neutral_only": false
     },
     "le_chi_vien_1442": {
       "title": "Vụ án Lệ Chi Viên",
@@ -195,7 +223,10 @@
       "author": "",
       "license": "",
       "license_url": "",
-      "source_url": ""
+      "source_url": "",
+      "caption": "",
+      "neutral_only": true,
+      "review_note": "Chưa có ảnh đạt chuẩn."
     },
     "lam_son_khoi_nghia": {
       "title": "Khởi nghĩa Lam Sơn",
@@ -211,7 +242,9 @@
       "author": "Bùi Lê Việt Cường",
       "license": "CC BY-SA 4.0",
       "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
-      "source_url": "https://commons.wikimedia.org/wiki/File:Lam_Kinh.jpg"
+      "source_url": "https://commons.wikimedia.org/wiki/File:Lam_Kinh.jpg",
+      "caption": "Khu di tích Lam Kinh ngày nay (dựng sau khởi nghĩa)",
+      "neutral_only": false
     },
     "rach_gam_xoai_mut_1785": {
       "title": "Trận Rạch Gầm – Xoài Mút",
@@ -224,11 +257,14 @@
         "rach_gam_xoai_mut"
       ],
       "wikimedia_search_query": "Tien Giang river Mekong",
-      "image": "/assets/scenes/rach_gam_xoai_mut_1785.jpg",
-      "author": "Bùi Thụy Đào Nguyên",
-      "license": "CC BY-SA 3.0",
-      "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
-      "source_url": "https://commons.wikimedia.org/wiki/File:S%C3%B4ng_Ti%E1%BB%81n,_%C4%91o%E1%BA%A1n_R%E1%BA%A1ch_G%E1%BA%A7m-Xo%C3%A0i_M%C3%BAt.jpg"
+      "image": "",
+      "author": "",
+      "license": "",
+      "license_url": "",
+      "source_url": "",
+      "caption": "",
+      "neutral_only": true,
+      "review_note": "Gỡ ảnh sông Tiền: có sà lan thép và ghe máy hiện đại (key BACKGROUND_ACTION)."
     },
     "ngoc_hoi_dong_da_1789": {
       "title": "Trận Ngọc Hồi – Đống Đa",
@@ -243,11 +279,14 @@
         "dai_pha_quan_thanh"
       ],
       "wikimedia_search_query": "Dong Da mound Hanoi",
-      "image": "/assets/scenes/ngoc_hoi_dong_da_1789.jpg",
-      "author": "The original uploader was Bình Giang at Vietnamese Wikipedia .",
-      "license": "Public domain",
+      "image": "",
+      "author": "",
+      "license": "",
       "license_url": "",
-      "source_url": "https://commons.wikimedia.org/wiki/File:Go_Dong_Da_3.JPG"
+      "source_url": "",
+      "caption": "",
+      "neutral_only": true,
+      "review_note": "Gỡ ảnh quảng trường gò Đống Đa hiện đại có tượng Quang Trung; chờ nhóm duyệt tranh vẽ trận đánh."
     },
     "len_ngoi_nui_ban_1788": {
       "title": "Lên ngôi ở núi Bân",
@@ -259,11 +298,14 @@
         "nui_ban"
       ],
       "wikimedia_search_query": "Hue Imperial City",
-      "image": "/assets/scenes/len_ngoi_nui_ban_1788.jpg",
-      "author": "Lưu Ly",
-      "license": "Public domain",
+      "image": "",
+      "author": "",
+      "license": "",
       "license_url": "",
-      "source_url": "https://commons.wikimedia.org/wiki/File:Festival_Hu%E1%BA%BF_2008-7.JPG"
+      "source_url": "",
+      "caption": "",
+      "neutral_only": true,
+      "review_note": "Gỡ ảnh Festival Huế 2008: cảnh tái hiện có diễn viên đóng vai và giàn đèn sân khấu hiện đại."
     },
     "phu_le_diet_trinh_1786": {
       "title": "Phù Lê diệt Trịnh",
@@ -278,7 +320,9 @@
       "author": "Phan Minh Tuấn",
       "license": "CC BY-SA 4.0",
       "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
-      "source_url": "https://commons.wikimedia.org/wiki/File:C%E1%BB%95ng_tr%C3%A1i_%C4%90oan_M%C3%B4n,_Ho%C3%A0ng_th%C3%A0nh_Th%C4%83ng_Long,_H%C3%A0_N%E1%BB%99i_001.JPG"
+      "source_url": "https://commons.wikimedia.org/wiki/File:C%E1%BB%95ng_tr%C3%A1i_%C4%90oan_M%C3%B4n,_Ho%C3%A0ng_th%C3%A0nh_Th%C4%83ng_Long,_H%C3%A0_N%E1%BB%99i_001.JPG",
+      "caption": "Hoàng thành Thăng Long ngày nay",
+      "neutral_only": false
     },
     "khoi_nghia_tay_son_1771": {
       "title": "Khởi nghĩa Tây Sơn",
@@ -293,7 +337,9 @@
       "author": "Uranus2808",
       "license": "CC BY-SA 4.0",
       "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
-      "source_url": "https://commons.wikimedia.org/wiki/File:DanTeTroi.jpg"
+      "source_url": "https://commons.wikimedia.org/wiki/File:DanTeTroi.jpg",
+      "caption": "Thung lũng Tây Sơn (Bình Định) ngày nay",
+      "neutral_only": false
     },
     "que_huong_tuc_mac": {
       "title": "Quê hương Tức Mặc (Nam Định)",
@@ -310,7 +356,9 @@
       "author": "Handyhuy",
       "license": "CC BY-SA 3.0",
       "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
-      "source_url": "https://commons.wikimedia.org/wiki/File:DenTran-NamDinh.JPG"
+      "source_url": "https://commons.wikimedia.org/wiki/File:DenTran-NamDinh.JPG",
+      "caption": "Đền Trần (Nam Định) ngày nay",
+      "neutral_only": false
     },
     "que_huong_nhi_khe": {
       "title": "Quê hương Nhị Khê (Thường Tín)",
@@ -327,7 +375,10 @@
       "author": "",
       "license": "",
       "license_url": "",
-      "source_url": ""
+      "source_url": "",
+      "caption": "",
+      "neutral_only": true,
+      "review_note": "Chưa có ảnh đạt chuẩn đúng địa danh Nhị Khê."
     },
     "que_huong_tay_son": {
       "title": "Quê hương Tây Sơn (Bình Định)",
@@ -344,7 +395,9 @@
       "author": "vi:User:Quangnguyen10",
       "license": "Public domain",
       "license_url": "",
-      "source_url": "https://commons.wikimedia.org/wiki/File:L%C3%A0ng_qu%C3%AA_T%C3%A2y_S%C6%A1n.jpeg"
+      "source_url": "https://commons.wikimedia.org/wiki/File:L%C3%A0ng_qu%C3%AA_T%C3%A2y_S%C6%A1n.jpeg",
+      "caption": "Đồng quê Tây Sơn (Bình Định) ngày nay",
+      "neutral_only": false
     },
     "moscow_red_square": {
       "title": "Mát-xcơ-va (nước Nga)",
@@ -363,7 +416,9 @@
       "author": "Bahnfrend",
       "license": "CC BY-SA 4.0",
       "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
-      "source_url": "https://commons.wikimedia.org/wiki/File:Views_of_Moscow_Kremlin_from_Red_Square,_2006_(01).jpg"
+      "source_url": "https://commons.wikimedia.org/wiki/File:Views_of_Moscow_Kremlin_from_Red_Square,_2006_(01).jpg",
+      "caption": "Quảng trường Đỏ, Mát-xcơ-va ngày nay",
+      "neutral_only": false
     }
   }
 }

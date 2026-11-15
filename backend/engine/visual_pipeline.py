@@ -3751,9 +3751,15 @@ class BackdropResolver:
             self._memo[memo_key] = result
             return {**result, "fromCache": False}
         entry = self.library.get(key)
+        if entry is not None and entry.neutral_only:
+            # Nhóm chốt phông trung tính cho key này: không dùng ảnh, KHÔNG gọi Wikimedia.
+            result = self.neutral(directive)
+            self._memo[memo_key] = result
+            return {**result, "fromCache": False}
         if entry is not None and entry.image_file(self.public_dir) is not None:
             result = {**base, "source": "library", "imageUrl": entry.image, "author": entry.author,
-                      "license": entry.license, "licenseUrl": entry.license_url, "sourceUrl": entry.source_url}
+                      "license": entry.license, "licenseUrl": entry.license_url, "sourceUrl": entry.source_url,
+                      "caption": entry.caption}
             self._memo[memo_key] = result
             return {**result, "fromCache": False}
         query = directive.wikimedia_search_query

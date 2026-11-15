@@ -12,6 +12,7 @@ import {
   Sparkles,
   Swords,
 } from 'lucide-react';
+import { StageInfoBar } from './StageInfoBar';
 import {
   ChatMessage,
   HeroCharacter,
@@ -35,6 +36,8 @@ export interface GlassChatBoxProps {
   onResetChat: () => void;
   /** Máy chủ (Render) đang được đánh thức qua GET /health: tạm khóa gửi câu hỏi. */
   serverWaking?: boolean;
+  /** Backend cho phép chế độ "Hành động" với bối cảnh hiện tại (cờ actionAllowed). */
+  actionAllowed?: boolean;
 }
 
 /**
@@ -56,7 +59,9 @@ export const GlassChatBox: React.FC<GlassChatBoxProps> = ({
   onToggleSceneMode,
   onResetChat,
   serverWaking = false,
+  actionAllowed = false,
 }) => {
+  const actionLocked = !actionAllowed && sceneMode !== 'BACKGROUND_ACTION';
   // Đang trả lời hoặc đang đánh thức máy chủ → không cho gửi câu hỏi mới.
   const sendLocked = isStreaming || serverWaking;
   const [inputText, setInputText] = useState('');
@@ -138,11 +143,18 @@ export const GlassChatBox: React.FC<GlassChatBoxProps> = ({
             <button
               type="button"
               onClick={() => onToggleSceneMode('BACKGROUND_ACTION')}
+              disabled={actionLocked}
+              data-testid="scene-mode-action"
+              title={
+                actionLocked
+                  ? `Chỉ bật được khi đang nói về trận ${hero.name} trực tiếp chỉ huy`
+                  : 'Tái hiện trận đánh (tắt khẩu hình)'
+              }
               className={`flex items-center gap-1.5 rounded-full px-3 py-1 transition-colors duration-200 ${
                 sceneMode === 'BACKGROUND_ACTION'
                   ? 'bg-amber-500/20 text-amber-200 font-medium'
                   : 'text-zinc-400 hover:text-zinc-200'
-              }`}
+              } disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-zinc-400`}
             >
               <Swords className="h-3 w-3" />
               <span>Hành động</span>
@@ -378,6 +390,14 @@ export const GlassChatBox: React.FC<GlassChatBoxProps> = ({
           </div>
         </motion.section>
       </div>
+
+      {/* Thẻ thông tin sân khấu + chú thích/ghi nguồn ảnh nền: cùng lớp với khung chat nên không bị che */}
+      <StageInfoBar
+        sceneData={sceneData}
+        sceneMode={sceneMode}
+        mouthSyncEnabled={mouthSyncEnabled}
+        fallbackTitle={hero.homeland}
+      />
     </div>
   );
 };
