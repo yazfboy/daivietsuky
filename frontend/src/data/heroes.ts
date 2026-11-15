@@ -306,6 +306,7 @@ export function buildDefaultSceneData(hero: HeroCharacter): SceneData {
     characterId: hero.id,
     sceneMode: 'FOREGROUND_TALKING',
     mouthSyncEnabled: true,
+    actionAllowed: false,
     characterReferencePath: hero.heroImageUrl,
     backgroundType: 'HOMELAND',
     contextKey: 'homeland',

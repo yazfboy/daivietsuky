@@ -26,6 +26,7 @@ import {
   resolveMediaUrl,
   wakeBackend,
 } from './utils/backendClient';
+import { applyManualSceneMode, canEnterAction, toLocalSafeScene } from './utils/sceneRules';
 
 function createInitialGreetingMessage(characterId: HeroId): ChatMessage {
   const hero = HEROES[characterId];
@@ -159,39 +160,13 @@ export const App: React.FC = () => {
     [selectedHeroId, stopActiveStream]
   );
 
+  // Nút "Đàm đạo" / "Hành động": chỉ đổi chế độ trên bối cảnh hiện tại; vào BACKGROUND_ACTION chỉ khi backend trả
+  // actionAllowed (key thuộc HERO_EVENTS của nhân vật). Frontend không giữ bảng HERO_EVENTS.
   const handleToggleSceneMode = useCallback(
     (mode: SceneMode) => {
       setSceneByHero((prev) => {
-        const current = prev[selectedHeroId];
-        const hero = HEROES[selectedHeroId];
-        const matchingPrompt =
-          hero.suggestedPrompts.find((p) => p.expectedSceneMode === mode) ||
-          hero.suggestedPrompts[0];
-
-        return {
-          ...prev,
-          [selectedHeroId]: {
-            ...current,
-            sceneMode: mode,
-            mouthSyncEnabled: mode === 'FOREGROUND_TALKING',
-            backgroundType:
-              mode === 'FOREGROUND_TALKING'
-                ? 'HOMELAND'
-                : matchingPrompt.backgroundType,
-            contextKey:
-              mode === 'FOREGROUND_TALKING'
-                ? 'homeland'
-                : matchingPrompt.contextKey,
-            contextTitle:
-              mode === 'FOREGROUND_TALKING'
-                ? hero.homeland
-                : matchingPrompt.contextTitle,
-            contextYear:
-              mode === 'FOREGROUND_TALKING'
-                ? hero.era
-                : matchingPrompt.contextYear,
-          },
-        };
+        const next = applyManualSceneMode(prev[selectedHeroId], mode);
+        return next === prev[selectedHeroId] ? prev : { ...prev, [selectedHeroId]: next };
       });
     },
     [selectedHeroId]
@@ -262,8 +237,10 @@ export const App: React.FC = () => {
    * kèm khẩu hình, visual_pipeline cập nhật cảnh động. Không kết nối được backend → dùng câu trả lời cục bộ.
    */
   const executeConversationTurn = useCallback(
-    (questionText: string, localScene: SceneData, localReplyText: string) => {
+    (questionText: string, proposedLocalScene: SceneData, localReplyText: string) => {
       stopActiveStream();
+      // Cảnh dự phòng khi không có backend: luôn tiền cảnh trò chuyện (frontend không biết HERO_EVENTS).
+      const localScene = toLocalSafeScene(proposedLocalScene);
       const heroId = selectedHeroId;
       const hero = HEROES[heroId];
       const nowTime = new Date().toLocaleTimeString('vi-VN', {
@@ -332,6 +309,7 @@ export const App: React.FC = () => {
                     characterId: heroId,
                     sceneMode: data.sceneMode,
                     mouthSyncEnabled: data.mouthSyncEnabled,
+                    actionAllowed: data.actionAllowed === true,
                     characterReferencePath: data.characterReferencePath || hero.heroImageUrl,
                     backgroundType: data.backgroundType,
                     contextKey: data.contextKey,
@@ -532,6 +510,7 @@ export const App: React.FC = () => {
           onSendMessage={handleSendMessage}
           onSelectPrompt={handleSelectPrompt}
           onToggleSceneMode={handleToggleSceneMode}
+          actionAllowed={canEnterAction(currentSceneData)}
           onResetChat={handleResetChat}
           serverWaking={serverStatus === 'waking'}
         />

@@ -20,6 +20,7 @@ export interface BackendSceneData {
   characterId: HeroId;
   sceneMode: SceneMode;
   mouthSyncEnabled: boolean;
+  actionAllowed: boolean;
   characterReferencePath: string;
   backgroundType: BackgroundType;
   contextKey: string;

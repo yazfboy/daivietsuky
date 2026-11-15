@@ -246,6 +246,7 @@ def scene_payload(services: Services, directive: SceneDirective, phase: str) -> 
         "characterId": profile.character_id,
         "sceneMode": directive.scene_mode,
         "mouthSyncEnabled": directive.mouth_sync_enabled,
+        "actionAllowed": directive.action_allowed,
         "characterReferencePath": directive.character_reference_path,
         "backgroundType": directive.background_type,
         "contextKey": directive.context_key,

@@ -145,9 +145,10 @@ async def test_scene_mode_by_code() -> None:
               f"{tag}: {hero} · \"{question}\" → {key}, {mode}, mouth_sync={mode == 'FOREGROUND_TALKING'}",
               f"{d.context_topic_key}, {d.scene_mode}, {d.mouth_sync_enabled}, {d.decided_by}")
     nt = await director.direct("nguyen_trai", "Bạch Đằng có ý nghĩa gì với ông?")
-    check(nt.image_allowed and nt.wikimedia_search_query and nt.topic_kind == "battle"
-          and "facing the viewer" in nt.character_action,
-          "2b: Nguyễn Trãi đứng kể, cảnh Bạch Đằng chỉ là nền minh họa (vẫn tìm ảnh)", nt.character_action[:60])
+    check(nt.image_allowed and nt.wikimedia_search_query == "" and nt.topic_kind == "battle"
+          and "facing the viewer" in nt.character_action and not nt.action_allowed,
+          "2b: Nguyễn Trãi đứng kể, cảnh Bạch Đằng chỉ minh họa (key neutral_only → phông trung tính, không tìm ảnh)",
+          nt.character_action[:60])
 
     section("2'. Cùng các trường hợp khi AI Đạo diễn lỗi (quy tắc dự phòng không gọi AI)")
     fallback = DirectorAgent(FailingPool())
@@ -269,12 +270,12 @@ async def test_backdrop_fallback() -> None:
         raise AssetSourceError("mô phỏng mất mạng")
 
     library = SceneLibrary.load()
-    EMPTY_KEY = "le_chi_vien_1442"  # có mục trong thư viện nhưng nhóm chưa chọn ảnh
-    check(EMPTY_KEY in library and library.get(EMPTY_KEY).image_file() is None, "Mục thư viện chưa có ảnh dùng để thử")
+    EMPTY_KEY = "dia_danh_moi_ngoai_thu_vien"  # key do AI đặt mới, không có trong thư viện → được tìm Wikimedia
+    check(EMPTY_KEY not in library, "Key ngoài thư viện dùng để thử nhánh Wikimedia")
     ok = BackdropResolver(library, WikimediaBackdropFinder(None, fetch=ok_fetch))
     result = await ok.resolve(directive(EMPTY_KEY))
     check(result["source"] == "wikimedia" and result["author"] == "Alex & Co (photo)" and result["sourceUrl"]
-          and result["license"] and result["width"] >= 800, "Thư viện chưa có ảnh → lấy Wikimedia, đủ ghi nguồn",
+          and result["license"] and result["width"] >= 800, "Key ngoài thư viện → lấy Wikimedia, đủ ghi nguồn",
           result.get("fileTitle", ""))
     again = await ok.resolve(directive(EMPTY_KEY))
     check(again["fromCache"] and len(calls) == 1, "Gọi lại cùng context_topic_key → cache, không gọi API lần 2")

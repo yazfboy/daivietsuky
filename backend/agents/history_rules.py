@@ -35,6 +35,7 @@ __all__ = [
     "QUESTION_KIND_HISTORICAL",
     "QUESTION_KIND_OFF_TOPIC",
     "EraBoundary",
+    "action_allowed",
     "clean_topic_key",
     "detect_era_boundary",
     "looks_biographical",
@@ -84,6 +85,11 @@ ERA_BOUNDARY_OPENING = "Thời ta chưa biết đến xứ ấy..."
 def scene_mode_for(hero_id: str, topic_key: str) -> str:
     """Luật 1 (chốt bằng code): chỉ trận mà nhân vật trực tiếp chỉ huy mới là BACKGROUND_ACTION."""
     return SCENE_BACKGROUND_ACTION if topic_key in HERO_EVENTS.get(hero_id, frozenset()) else SCENE_FOREGROUND_TALKING
+
+
+def action_allowed(hero_id: str, topic_key: str) -> bool:
+    """Được phép ở chế độ BACKGROUND_ACTION (kể cả khi người dùng bấm nút "Hành động" bằng tay) hay không."""
+    return topic_key in HERO_EVENTS.get(hero_id, frozenset())
 
 
 def mouth_sync_for(hero_id: str, topic_key: str) -> bool:

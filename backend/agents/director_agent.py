@@ -54,6 +54,7 @@ from .history_rules import (
     QUESTION_KIND_HISTORICAL,
     QUESTION_KIND_OFF_TOPIC,
     QUESTION_KINDS,
+    action_allowed,
     clean_topic_key,
     detect_era_boundary,
     looks_biographical,
@@ -172,6 +173,7 @@ class SceneDirective:
     wikimedia_search_query: str = ""
     image_allowed: bool = True  # False → chỉ phông trung tính (câu lạc đề / quê hương ngoài câu hỏi tiểu sử)
     beyond_era: bool = False
+    action_allowed: bool = False  # key thuộc HERO_EVENTS[hero] — frontend chỉ đọc cờ này cho nút "Hành động"
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -653,7 +655,7 @@ class DirectorAgent:
             title = (cached.title if cached else "") or _clean(data.get("topic_title_vi"))[:80] or _humanize_key(key)
             year = ""
         query = ""
-        if image_allowed:
+        if image_allowed and not (entry is not None and entry.neutral_only):
             query = (
                 (entry.wikimedia_search_query if entry is not None else "")
                 or _safe_query(data.get("wikimedia_search_query"))
@@ -737,6 +739,7 @@ class DirectorAgent:
             wikimedia_search_query=query,
             image_allowed=image_allowed,
             beyond_era=beyond_era,
+            action_allowed=action_allowed(hero_id, key),
         )
 
     def _remember_topic(self, directive: SceneDirective) -> None:

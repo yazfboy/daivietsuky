@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Compass, Eye, Shield, Sparkles, Swords } from 'lucide-react';
+import { Swords } from 'lucide-react';
 import { HEROES } from '../data/heroes';
 import { DynamicHeroStageProps, HeroId, HeroRigData } from '../types/hero';
 import { heroAssetCache } from '../utils/assetPreloader';
@@ -15,16 +15,6 @@ import {
 import { HeroGLRenderer } from '../engine/heroGLRenderer';
 import { BackdropCamera, BackdropTheme, SceneBackdrop, resolveBackdropTheme } from '../engine/sceneBackdrop';
 
-/** Chỉ nhận link http(s) cho dòng ghi nguồn (chặn javascript:, data:...). */
-const safeHttpUrl = (value?: string): string | undefined => {
-  if (!value) return undefined;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined;
-  } catch {
-    return undefined;
-  }
-};
 import { StreamingMouthSync, textSyllables } from '../engine/visemeSync';
 
 /**
@@ -150,7 +140,6 @@ function hexToRgb(hex: string): string {
 export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
   const { characterId, heroImageUrl, sceneMode, mouthSyncEnabled, isStreaming, sceneData } = props;
   const hero = HEROES[characterId];
-  const isActionMode = sceneMode === 'BACKGROUND_ACTION';
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const liveRef = useRef<LiveProps>(props);
   const mouthRef = useRef<StreamingMouthSync>(new StreamingMouthSync());
@@ -514,45 +503,6 @@ export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
         }}
       />
 
-      {/* Ghi nguồn ảnh nền (thư viện / Wikimedia Commons) — hiển thị dạng chữ thuần, không render HTML */}
-      {sceneData?.backdrop && sceneData.backdrop.source !== 'neutral' && sceneData.backdrop.imageUrl && (
-        <div
-          data-testid="backdrop-attribution"
-          className="absolute bottom-16 right-4 z-20 max-w-[min(420px,calc(100vw-32px))] truncate rounded-md bg-[#0B0C0E]/70 px-2.5 py-1 text-[10px] text-zinc-300 backdrop-blur-sm"
-        >
-          {'Ảnh: '}
-          {sceneData.backdrop.author || 'không rõ tác giả'}
-          {sceneData.backdrop.license ? ' · ' : ''}
-          {safeHttpUrl(sceneData.backdrop.licenseUrl) ? (
-            <a
-              href={safeHttpUrl(sceneData.backdrop.licenseUrl)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline decoration-zinc-500 hover:text-white"
-            >
-              {sceneData.backdrop.license}
-            </a>
-          ) : (
-            sceneData.backdrop.license
-          )}
-          {safeHttpUrl(sceneData.backdrop.sourceUrl) && (
-            <>
-              {' · '}
-              <a
-                href={safeHttpUrl(sceneData.backdrop.sourceUrl)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline decoration-zinc-500 hover:text-white"
-              >
-                {safeHttpUrl(sceneData.backdrop.sourceUrl)?.startsWith('https://commons.wikimedia.org/')
-                  ? 'Wikimedia Commons'
-                  : 'Nguồn ảnh'}
-              </a>
-            </>
-          )}
-        </div>
-      )}
-
       {/* Chỉ báo trạng thái đồng bộ khẩu hình / hành động */}
       <div className="pointer-events-none absolute bottom-6 left-1/2 z-20 -translate-x-1/2 lg:left-[calc(290px+17vw)]">
         <div className="flex items-center gap-2 rounded-full border border-white/[0.1] bg-[#0B0C0E]/80 px-3.5 py-1.5 text-[11px] text-zinc-300 backdrop-blur-md shadow-lg whitespace-nowrap">
@@ -574,30 +524,6 @@ export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
         </div>
       </div>
 
-      {/* Lớp 5: Bảng thông tin bối cảnh sân khấu ( góc trên bên phải ) */}
-      <div className="pointer-events-none absolute right-5 top-16 z-10 hidden xl:flex flex-col items-end gap-2">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/[0.08] bg-[#12141A]/65 px-3.5 py-2 text-xs text-zinc-300 backdrop-blur-md">
-          {isActionMode ? <Compass className="h-3.5 w-3.5 text-amber-400" /> : <Shield className="h-3.5 w-3.5 text-[#D4B982]" />}
-          <div className="flex flex-col text-right">
-            <span className="text-[10px] uppercase tracking-wider text-zinc-500">Bối cảnh sân khấu ({sceneMode})</span>
-            <span className="font-medium text-zinc-200">
-              {sceneData?.contextTitle || hero.homeland}
-              {sceneData?.contextYear ? ` · ${sceneData.contextYear}` : ''}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 rounded-full border border-white/[0.06] bg-[#12141A]/50 px-3 py-1 text-[11px] text-zinc-400 backdrop-blur-md">
-          <Eye className="h-3 w-3 text-zinc-400" />
-          <span>
-            Rig 2.5D:{' '}
-            {sceneData?.rigData ? `${Object.keys(sceneData.rigData.joints).length} khớp xương` : 'Đã gắn khung chuẩn'}
-          </span>
-          <span className="text-zinc-600">|</span>
-          <Sparkles className="h-3 w-3 text-[#D4B982]" />
-          <span>MouthSync: {mouthSyncEnabled ? 'ON' : 'OFF'}</span>
-        </div>
-      </div>
     </div>
   );
 };

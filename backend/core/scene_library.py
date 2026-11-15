@@ -4,6 +4,11 @@ Mỗi mục: ``context_topic_key`` → tên bối cảnh, năm, loại (battle /
 ảnh Wikimedia, và ảnh do nhóm tự chọn + duyệt (``image``, ``author``, ``license``, ``license_url``, ``source_url``).
 Chỉ mục có đủ file ảnh trên đĩa + tác giả + giấy phép mới được dùng làm ảnh nền; còn lại hệ thống tìm Wikimedia,
 không được thì dùng phông trung tính. Code KHÔNG tự sinh hay tự tải ảnh vào thư viện.
+
+* ``neutral_only: true`` — nhóm chốt dùng phông trung tính (giấy dó + tên địa danh) cho key này: KHÔNG dùng ảnh
+  thư viện và KHÔNG tìm Wikimedia (vd. ảnh cũ sai sử, nguồn gốc chưa xác minh, chưa có ảnh được duyệt).
+* ``caption`` — chú thích hiện cạnh dòng ghi nguồn, vd. "Hoàng thành Thăng Long ngày nay" khi ảnh là công trình dựng
+  sau sự kiện.
 """
 
 from __future__ import annotations
@@ -38,10 +43,12 @@ class LibraryEntry:
     license: str
     license_url: str
     source_url: str
+    caption: str = ""
+    neutral_only: bool = False
 
     def image_file(self, public_dir: Path = PUBLIC_DIR) -> Path | None:
-        """File ảnh trên đĩa nếu mục đã được nhóm điền đủ và ảnh thực sự tồn tại."""
-        if not (self.image and self.author and self.license):
+        """File ảnh trên đĩa nếu mục đã được nhóm điền đủ và ảnh thực sự tồn tại (``neutral_only`` → luôn None)."""
+        if self.neutral_only or not (self.image and self.author and self.license):
             return None
         if not self.image.startswith("/assets/scenes/") or not self.image.lower().endswith(_IMAGE_SUFFIXES):
             return None
@@ -100,6 +107,8 @@ class SceneLibrary:
                 license=text("license"),
                 license_url=text("license_url"),
                 source_url=text("source_url"),
+                caption=text("caption"),
+                neutral_only=item.get("neutral_only") is True,
             )
         return cls(entries)
 
