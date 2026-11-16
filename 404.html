@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Đại Việt Sử Ký</title>
+    <script>
+      // GitHub Pages trả 404.html cho mọi đường dẫn con không có file thật. Ứng dụng là SPA một trang,
+      // nên chuyển về gốc ứng dụng dưới base path để React tiếp quản, tránh lỗi 404 khi tải lại / vào link sâu.
+      (function () {
+        var seg = location.pathname.split('/').filter(Boolean);
+        var base = seg.length ? '/' + seg[0] + '/' : '/';
+        location.replace(base + location.search + location.hash);
+      })();
+    </script>
+  </head>
+  <body style="background:#0B0C0E;color:#D4B982;font-family:system-ui,sans-serif">
+    Đang chuyển về Đại Việt Sử Ký…
+  </body>
+</html>
