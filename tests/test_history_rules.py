@@ -145,9 +145,10 @@ async def test_scene_mode_by_code() -> None:
               f"{tag}: {hero} · \"{question}\" → {key}, {mode}, mouth_sync={mode == 'FOREGROUND_TALKING'}",
               f"{d.context_topic_key}, {d.scene_mode}, {d.mouth_sync_enabled}, {d.decided_by}")
     nt = await director.direct("nguyen_trai", "Bạch Đằng có ý nghĩa gì với ông?")
-    check(nt.image_allowed and nt.wikimedia_search_query == "" and nt.topic_kind == "battle"
+    check(nt.image_allowed and nt.topic_kind == "battle"
           and "facing the viewer" in nt.character_action and not nt.action_allowed,
-          "2b: Nguyễn Trãi đứng kể, cảnh Bạch Đằng chỉ minh họa (key neutral_only → phông trung tính, không tìm ảnh)",
+          "2b: Nguyễn Trãi đứng kể, cảnh Bạch Đằng chỉ minh họa (nền: ảnh Bãi cọc Cao Quỳ foreground_only — "
+          "kiểm ở tests/test_hero_portraits_scenes.py)",
           nt.character_action[:60])
 
     section("2'. Cùng các trường hợp khi AI Đạo diễn lỗi (quy tắc dự phòng không gọi AI)")

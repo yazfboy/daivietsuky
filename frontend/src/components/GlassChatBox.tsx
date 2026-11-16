@@ -13,6 +13,7 @@ import {
   Swords,
 } from 'lucide-react';
 import { StageInfoBar } from './StageInfoBar';
+import { AI_PORTRAIT_LABEL } from '../data/heroes';
 import {
   ApprovedVideo,
   ChatMessage,
@@ -129,6 +130,11 @@ export const GlassChatBox: React.FC<GlassChatBoxProps> = ({
               <p className="text-[11px] text-zinc-400">
                 {hero.title} · {hero.years}
               </p>
+              {hero.portraitAiGenerated && (
+                <p data-testid="hero-portrait-ai-label" className="text-[10px] font-medium text-amber-200/90">
+                  {AI_PORTRAIT_LABEL}
+                </p>
+              )}
             </div>
           </div>
         </div>

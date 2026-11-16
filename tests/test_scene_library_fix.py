@@ -39,7 +39,8 @@ HERO_SHA256 = {
     "nguyen_trai.png": "c59eba83ccc695a26e71540b5f2716ad187bf6641385d3512b344b634231f0ad",
     "quang_trung.png": "eea5e1de7fd3e42c41055c3da2a7d7e9f1d2f43a87bb708045a53b7f119c975c",
 }
-REMOVED = ("khang_chien_mong_nguyen_1285", "hich_tuong_si", "ngoc_hoi_dong_da_1789", "bach_dang_1288",
+# bach_dang_1288: nhóm duyệt ảnh Bãi cọc Cao Quỳ (foreground_only, 16/11/2026) — kiểm ở tests/test_hero_portraits_scenes.py
+REMOVED = ("khang_chien_mong_nguyen_1285", "hich_tuong_si", "ngoc_hoi_dong_da_1789",
            "khang_chien_mong_nguyen_1287_1288", "rach_gam_xoai_mut_1785", "len_ngoi_nui_ban_1788")
 EMPTY = ("tot_dong_chuc_dong_1426", "chuong_duong_ham_tu_1285", "le_chi_vien_1442", "que_huong_nhi_khe")
 RESULTS: list[bool] = []
@@ -83,7 +84,8 @@ async def test_library() -> None:
           "không ghi điện Kính Thiên (dựng 1428)")
     check("ngày nay" in library.get("lam_son_khoi_nghia").caption, "lam_son_khoi_nghia: caption ghi rõ công trình ngày nay",
           library.get("lam_son_khoi_nghia").caption)
-    orphans = sorted(p.stem for p in SCENES.glob("*.jpg") if not (library.get(p.stem) and library.get(p.stem).image))
+    referenced = {Path(e.image).name for e in library.entries() if e.image}
+    orphans = sorted(p.name for p in SCENES.glob("*.jpg") if p.name not in referenced)
     check(not orphans, "Không còn file ảnh mồ côi trong assets/scenes", ", ".join(orphans))
 
     calls: list[str] = []
@@ -107,12 +109,12 @@ async def test_library() -> None:
         async def generate(self, models: Any, payload: Any, **_: Any) -> SimpleNamespace:
             return SimpleNamespace(text=json.dumps({
                 "reason": "x", "question_kind": "historical_topic", "keep_previous_topic": False,
-                "context_topic_key": "bach_dang_1288", "topic_title_vi": "", "wikimedia_search_query": "Bach Dang",
+                "context_topic_key": "ngoc_hoi_dong_da_1789", "topic_title_vi": "", "wikimedia_search_query": "Dong Da",
                 "beyond_era": False, "background_prompt": "", "character_action": "", "scene_prompt": ""}),
                 key_label="fake", model="fake")
 
-    d = await DirectorAgent(Pool(), library=library).direct("nguyen_trai", "Trận Bạch Đằng?")
-    check(d.context_topic_key == "bach_dang_1288" and d.wikimedia_search_query == "",
+    d = await DirectorAgent(Pool(), library=library).direct("nguyen_trai", "Trận Đống Đa?")
+    check(d.context_topic_key == "ngoc_hoi_dong_da_1789" and d.wikimedia_search_query == "",
           "AI Đạo diễn không phát từ khóa tìm ảnh cho key neutral_only (dù AI đề xuất)")
 
     for name, digest in HERO_SHA256.items():

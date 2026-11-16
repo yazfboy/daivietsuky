@@ -15,14 +15,14 @@
         "bach_dang_hai_khau"
       ],
       "wikimedia_search_query": "Bach Dang River Quang Ninh",
-      "image": "",
-      "author": "",
-      "license": "",
+      "image": "/assets/scenes/bach_dang_1288_cao_quy.jpg",
+      "author": "Tran Trong Nhan (vi.wikipedia)",
+      "license": "Public domain",
       "license_url": "",
-      "source_url": "",
-      "caption": "",
-      "neutral_only": true,
-      "review_note": "Gỡ ảnh 'Cọc Bạch Đằng.jpg': là ảnh chụp lại một bức tranh; Commons chỉ ghi người chụp (Bùi Thụy Đào Nguyên, 2014, CC BY-SA 3.0), không rõ họa sĩ, năm vẽ, nơi trưng bày — chưa xác minh được."
+      "source_url": "https://commons.wikimedia.org/wiki/File:B%C3%A3i_c%E1%BB%8Dc_Cao_Qu%E1%BB%B3.jpg",
+      "caption": "Bãi cọc Cao Quỳ ngày nay",
+      "review_note": "Nhóm duyệt 16/11/2026: ảnh hố khai quật bãi cọc Cao Quỳ (Thủy Nguyên, Hải Phòng) — di tích thật, chỉ dùng khi nhân vật đứng tiền cảnh trò chuyện (foreground_only); BACKGROUND_ACTION dùng phông giấy dó chờ clip. Ảnh cũ 'Cọc Bạch Đằng.jpg' (tranh chưa xác minh) đã gỡ từ trước.",
+      "foreground_only": true
     },
     "khang_chien_mong_nguyen_1285": {
       "title": "Kháng chiến chống Nguyên Mông lần thứ hai",
@@ -264,7 +264,7 @@
       "source_url": "",
       "caption": "",
       "neutral_only": true,
-      "review_note": "Gỡ ảnh sông Tiền: có sà lan thép và ghe máy hiện đại (key BACKGROUND_ACTION)."
+      "review_note": "Gỡ ảnh sông Tiền: có sà lan thép và ghe máy hiện đại (key BACKGROUND_ACTION). Đợt 16/11/2026: ảnh rạch ở xã Bàn Long (Khả Vân Đại Hãn, CC BY-SA 4.0) có công trình xây mái ngói đỏ tường sáng hiện đại phía xa (x≈1020–1130, y≈395–415 trên bản 1920×1080); ảnh gần sông Xoài Mút chỉ có vườn/ruộng → giữ neutral_only."
     },
     "ngoc_hoi_dong_da_1789": {
       "title": "Trận Ngọc Hồi – Đống Đa",

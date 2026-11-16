@@ -37,5 +37,8 @@
   896,
   1152
  ],
- "created_at": "2026-11-12T19:35:28"
+ "created_at": "2026-11-12T19:35:28",
+ "reviewed_by": "",
+ "review_status": "legacy",
+ "review_note": "Ảnh đang chạy trên web từ trước quy định reviewed_by (16/11/2026); giữ nguyên tới khi nhóm / giáo viên Sử chọn ảnh thay trong scene_candidates/review_heroes.html."
 }

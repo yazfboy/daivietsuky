@@ -42,6 +42,10 @@ jobs:
       - name: Check video library
         run: python scripts/check_video_library.py
 
+      # Chân dung nhân vật: ảnh mới phải có reviewed_by + image_sha256 khớp trong {id}.meta.json, không thì dừng build.
+      - name: Check hero portraits
+        run: python scripts/check_hero_portraits.py
+
       - name: Build (base /daivietsuky/)
         working-directory: frontend
         env:

@@ -6,6 +6,9 @@ import { HeroCharacter, HeroId, SceneData, SceneMode, SuggestedPrompt } from '..
  */
 const asset = (path: string): string => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
 
+/** Nhãn bắt buộc cho chân dung nhân vật do AI tạo. */
+export const AI_PORTRAIT_LABEL = 'Chân dung minh họa do AI tạo';
+
 export const HERO_IDS: readonly HeroId[] = [
   'tran_hung_dao',
   'nguyen_trai',
@@ -26,6 +29,7 @@ export const HEROES: Record<HeroId, HeroCharacter> = {
     selfPronoun: 'Ta',
     listenerAddress: 'ngươi',
     heroImageUrl: asset('/assets/heroes/tran_hung_dao.png'),
+    portraitAiGenerated: false,  // ảnh hiện tại: ảnh chụp tranh trên Wikimedia Commons (không phải AI)
     rigUrl: asset('/assets/heroes/tran_hung_dao.rig.json'),
     metaUrl: asset('/assets/heroes/tran_hung_dao.meta.json'),
     accentColor: '#C89D54',
@@ -109,6 +113,7 @@ export const HEROES: Record<HeroId, HeroCharacter> = {
     selfPronoun: 'Ta',
     listenerAddress: 'người',
     heroImageUrl: asset('/assets/heroes/nguyen_trai.png'),
+    portraitAiGenerated: true,
     rigUrl: asset('/assets/heroes/nguyen_trai.rig.json'),
     metaUrl: asset('/assets/heroes/nguyen_trai.meta.json'),
     accentColor: '#7BA7BC',
@@ -192,6 +197,7 @@ export const HEROES: Record<HeroId, HeroCharacter> = {
     selfPronoun: 'Ta',
     listenerAddress: 'ngươi',
     heroImageUrl: asset('/assets/heroes/quang_trung.png'),
+    portraitAiGenerated: true,
     rigUrl: asset('/assets/heroes/quang_trung.rig.json'),
     metaUrl: asset('/assets/heroes/quang_trung.meta.json'),
     accentColor: '#D67A4B',
