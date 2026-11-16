@@ -303,7 +303,7 @@ export class SceneBackdrop {
   private width = 0;
   private height = 0;
   private staticLayer: HTMLCanvasElement | null = null;
-  private external: HTMLImageElement | null = null;
+  private external: HTMLImageElement | HTMLVideoElement | null = null;
   private lastTime = -1;
 
   private readonly sprites = {
@@ -344,9 +344,22 @@ export class SceneBackdrop {
     this.populate();
   }
 
-  /** Ảnh/WebP bối cảnh do Phase 2 sinh (nếu có) làm lớp nền thay cho bầu trời vẽ thủ tục. */
-  setExternalImage(image: HTMLImageElement | null): void {
+  /**
+   * Ảnh nền ngoài (ảnh thư viện / Wikimedia / ảnh tĩnh AI) hoặc clip AI đã duyệt (<video> tắt tiếng) làm lớp nền thay
+   * cho cảnh vẽ thủ tục. Video được vẽ lại từng khung; model anh hùng luôn vẽ sau, nằm trên lớp này.
+   */
+  setExternalImage(image: HTMLImageElement | HTMLVideoElement | null): void {
     this.external = image;
+  }
+
+  /** Kích thước nguồn ngoài nếu đã sẵn sàng để vẽ (ảnh đã decode / video đã có khung hình), không thì null. */
+  private externalSize(): [number, number] | null {
+    const src = this.external;
+    if (!src) return null;
+    if ('videoWidth' in src) {
+      return src.readyState >= 2 && src.videoWidth > 0 && src.videoHeight > 0 ? [src.videoWidth, src.videoHeight] : null;
+    }
+    return src.complete && src.naturalWidth > 0 ? [src.naturalWidth, src.naturalHeight] : null;
   }
 
   private populate(): void {
@@ -618,10 +631,11 @@ export class SceneBackdrop {
     ctx.scale(1.06 * camera.zoom, 1.06 * camera.zoom);
     ctx.translate(-w / 2, -h / 2);
     this.layer(ctx, camera, 0.25, () => {
-      if (this.external && this.external.complete && this.external.naturalWidth > 0) {
-        const img = this.external;
-        const k = Math.max(w / img.naturalWidth, h / img.naturalHeight);
-        ctx.drawImage(img, (w - img.naturalWidth * k) / 2, (h - img.naturalHeight * k) / 2, img.naturalWidth * k, img.naturalHeight * k);
+      const size = this.externalSize();
+      if (this.external && size) {
+        const [iw, ih] = size;
+        const k = Math.max(w / iw, h / ih);
+        ctx.drawImage(this.external, (w - iw * k) / 2, (h - ih * k) / 2, iw * k, ih * k);
       } else if (this.staticLayer) {
         ctx.drawImage(this.staticLayer, 0, 0, w, h);
       }

@@ -1,0 +1,18 @@
+{
+  "_note": "Thư viện video minh họa ĐÃ DUYỆT: context_topic_key → clip 8 giây KHÔNG âm thanh, KHÔNG có mặt nhân vật chính (chỉ cảnh, quân, thuyền). Nhóm tự tạo clip bằng công cụ AI, tự duyệt, chép file vào frontend/public/assets/videos/{key}.mp4 rồi thêm mục ở 'videos'. Script scripts/check_video_library.py chạy lúc build loại mục thiếu reviewed_by, has_hero_face true, thiếu file, còn rãnh âm thanh hoặc sai thời lượng. Mục bắt đầu bằng '_' là mẫu, bị bỏ qua.",
+  "version": 1,
+  "videos": {
+    "_mau_bach_dang_1288": {
+      "video_path": "/assets/videos/bach_dang_1288.mp4",
+      "poster_path": "/assets/scenes/bach_dang_1288.jpg",
+      "duration_seconds": 8,
+      "ai_video_label": "Video minh họa do AI tạo",
+      "ai_image_label": "Ảnh minh họa do AI tạo",
+      "creator": "Tên người/nhóm thực hiện",
+      "tool": "Tên công cụ AI tạo video",
+      "created_at": "YYYY-MM-DD",
+      "reviewed_by": "Tên người duyệt",
+      "has_hero_face": false
+    }
+  }
+}

@@ -28,9 +28,19 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
+
+      # Thư viện video minh họa: loại mục thiếu reviewed_by / có mặt nhân vật / thiếu .mp4 / còn âm thanh,
+      # rồi sinh frontend/public/assets/videos/approved.json — frontend chỉ hiện nút "Xem video" cho key có trong file này.
+      - name: Check video library
+        run: python scripts/check_video_library.py
 
       - name: Build (base /daivietsuky/)
         working-directory: frontend
@@ -42,6 +52,10 @@ jobs:
         run: |
           if [ -n "$API_BASE_OVERRIDE" ]; then export VITE_API_BASE_URL="$API_BASE_OVERRIDE"; fi
           npm run build
+
+      # Gỡ khỏi bản build mọi file video không có mục duyệt hợp lệ (không đăng clip chưa duyệt lên gh-pages).
+      - name: Remove unapproved videos from build
+        run: python scripts/check_video_library.py --dist frontend/dist
 
       - name: Publish to gh-pages
         uses: peaceiris/actions-gh-pages@v4

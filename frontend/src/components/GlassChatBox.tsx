@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { StageInfoBar } from './StageInfoBar';
 import {
+  ApprovedVideo,
   ChatMessage,
   HeroCharacter,
   SceneData,
@@ -38,6 +39,10 @@ export interface GlassChatBoxProps {
   serverWaking?: boolean;
   /** Backend cho phép chế độ "Hành động" với bối cảnh hiện tại (cờ actionAllowed). */
   actionAllowed?: boolean;
+  /** Clip AI đã duyệt cho bối cảnh hiện tại (null → không có nút "Xem video"). */
+  video?: ApprovedVideo | null;
+  videoOn?: boolean;
+  onToggleVideo?: () => void;
 }
 
 /**
@@ -60,6 +65,9 @@ export const GlassChatBox: React.FC<GlassChatBoxProps> = ({
   onResetChat,
   serverWaking = false,
   actionAllowed = false,
+  video = null,
+  videoOn = false,
+  onToggleVideo,
 }) => {
   const actionLocked = !actionAllowed && sceneMode !== 'BACKGROUND_ACTION';
   // Đang trả lời hoặc đang đánh thức máy chủ → không cho gửi câu hỏi mới.
@@ -397,6 +405,9 @@ export const GlassChatBox: React.FC<GlassChatBoxProps> = ({
         sceneMode={sceneMode}
         mouthSyncEnabled={mouthSyncEnabled}
         fallbackTitle={hero.homeland}
+        video={video}
+        videoOn={videoOn}
+        onToggleVideo={onToggleVideo}
       />
     </div>
   );

@@ -68,7 +68,7 @@ from ..core.dp_optimizer import (
     count_syllables,
 )
 from ..core.key_pool import DEFAULT_ENV_PATH, KeyPoolError, MultiThreadKeyPool
-from ..core.scene_library import SceneLibrary
+from ..core.scene_library import LibraryEntry, SceneLibrary
 
 __all__ = [
     "BackdropImage",
@@ -3715,7 +3715,12 @@ class WikimediaBackdropFinder:
 
 
 class BackdropResolver:
-    """Chọn ảnh nền cho chỉ thị của AI Đạo diễn: thư viện dựng sẵn → Wikimedia → phông trung tính.
+    """Chọn ảnh nền cho chỉ thị của AI Đạo diễn: thư viện dựng sẵn → ảnh tĩnh AI đã duyệt → Wikimedia → phông trung tính.
+
+    * ``neutral_only`` → phông trung tính, không gọi Wikimedia.
+    * Ảnh ``foreground_only`` (vd. hiện trạng di tích ngày nay) trả kèm ``foregroundOnly: true`` và ``actionBackdrop``
+      (ảnh tĩnh AI đã duyệt nếu có, không thì phông trung tính) để frontend đổi ngay khi chuyển chế độ: ảnh này KHÔNG
+      bao giờ được vẽ ở BACKGROUND_ACTION (``utils/sceneRules.ts`` → ``effectiveBackdrop``).
 
     Kết quả (không gồm lỗi mạng) được nhớ O(1) theo ``(context_topic_key, image_allowed, query)``.
     """
@@ -3740,28 +3745,48 @@ class BackdropResolver:
             payload["detail"] = detail[:200]
         return payload
 
+    def _ai_still(self, entry: LibraryEntry, base: dict[str, Any]) -> dict[str, Any] | None:
+        """Ảnh tĩnh AI đã duyệt (khung hình trích từ clip), kèm nhãn và người tạo / công cụ / người duyệt."""
+        still = entry.ai_still
+        if still is None or entry.ai_still_file(self.public_dir) is None:
+            return None
+        return {**base, "source": "ai_still", "imageUrl": still.poster_path, "aiLabel": still.label,
+                "tool": still.tool, "creator": still.creator, "reviewedBy": still.reviewed_by,
+                "createdAt": still.created_at}
+
+    def _library(self, directive: SceneDirective, entry: LibraryEntry | None,
+                 base: dict[str, Any]) -> dict[str, Any] | None:
+        """Kết quả chỉ từ dữ liệu trên đĩa (không mạng); ``None`` → còn phải tìm Wikimedia."""
+        if not directive.image_allowed or (entry is not None and entry.neutral_only):
+            return self.neutral(directive)
+        if entry is None:
+            return None
+        ai_still = self._ai_still(entry, base)
+        if entry.image_file(self.public_dir) is not None:
+            photo = {**base, "source": "library", "imageUrl": entry.image, "author": entry.author,
+                     "license": entry.license, "licenseUrl": entry.license_url, "sourceUrl": entry.source_url,
+                     "caption": entry.caption}
+            if entry.foreground_only:
+                photo["foregroundOnly"] = True
+                photo["actionBackdrop"] = ai_still or self.neutral(directive)
+            return photo
+        if ai_still is not None:
+            return ai_still
+        if entry.foreground_only:
+            # Ảnh tiền cảnh chưa có file: không tìm Wikimedia thay thế cho key đã được nhóm chốt ảnh.
+            return self.neutral(directive)
+        return None
+
     async def resolve(self, directive: SceneDirective) -> dict[str, Any]:
         key = directive.context_topic_key
         memo_key = (key, directive.image_allowed, directive.wikimedia_search_query)
         if memo_key in self._memo:
             return {**self._memo[memo_key], "fromCache": True}
         base = {"contextTopicKey": key, "title": directive.topic_title, "subtitle": directive.topic_year}
-        if not directive.image_allowed:
-            result = self.neutral(directive)
-            self._memo[memo_key] = result
-            return {**result, "fromCache": False}
-        entry = self.library.get(key)
-        if entry is not None and entry.neutral_only:
-            # Nhóm chốt phông trung tính cho key này: không dùng ảnh, KHÔNG gọi Wikimedia.
-            result = self.neutral(directive)
-            self._memo[memo_key] = result
-            return {**result, "fromCache": False}
-        if entry is not None and entry.image_file(self.public_dir) is not None:
-            result = {**base, "source": "library", "imageUrl": entry.image, "author": entry.author,
-                      "license": entry.license, "licenseUrl": entry.license_url, "sourceUrl": entry.source_url,
-                      "caption": entry.caption}
-            self._memo[memo_key] = result
-            return {**result, "fromCache": False}
+        local = self._library(directive, self.library.get(key), base)
+        if local is not None:
+            self._memo[memo_key] = local
+            return {**local, "fromCache": False}
         query = directive.wikimedia_search_query
         if self.finder is None or not query:
             result = self.neutral(directive)
