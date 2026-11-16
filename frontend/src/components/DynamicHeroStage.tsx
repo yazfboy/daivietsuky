@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { Swords } from 'lucide-react';
 import { HEROES } from '../data/heroes';
 import { DynamicHeroStageProps, HeroId, HeroRigData } from '../types/hero';
@@ -14,6 +14,7 @@ import {
 } from '../engine/heroRig';
 import { HeroGLRenderer } from '../engine/heroGLRenderer';
 import { BackdropCamera, BackdropTheme, SceneBackdrop, resolveBackdropTheme } from '../engine/sceneBackdrop';
+import { effectiveBackdrop } from '../utils/sceneRules';
 
 import { StreamingMouthSync, textSyllables } from '../engine/visemeSync';
 
@@ -138,14 +139,25 @@ function hexToRgb(hex: string): string {
 }
 
 export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
-  const { characterId, heroImageUrl, sceneMode, mouthSyncEnabled, isStreaming, sceneData } = props;
+  const { characterId, heroImageUrl, sceneMode, mouthSyncEnabled, isStreaming, sceneData, backdropVideoUrl } = props;
   const hero = HEROES[characterId];
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const liveRef = useRef<LiveProps>(props);
   const mouthRef = useRef<StreamingMouthSync>(new StreamingMouthSync());
   const consumedRef = useRef<string>('');
 
   liveRef.current = props;
+
+  // Clip AI đã duyệt: ép tắt tiếng qua ref (thuộc tính `muted` của React không luôn được ghi xuống DOM) rồi mới phát.
+  useLayoutEffect(() => {
+    const video = videoRef.current;
+    if (!backdropVideoUrl || !video) return;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.volume = 0;
+    void video.play().catch(() => undefined);
+  }, [backdropVideoUrl]);
 
   // ─── Khẩu hình: nạp phần chữ mới của luồng stream; tắt stream/tắt mouth sync → khép miệng ngay. ───
   const activeChunk = sceneData?.activeChunk ?? null;
@@ -398,11 +410,15 @@ export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
       const t = (now - epoch) / 1000;
       const { width, height, dpr } = resize();
       const scene = live.sceneData;
-      // Có backend: ảnh nền do backend chọn (thư viện → Wikimedia → phông trung tính), không vẽ cảnh thủ tục.
-      // Chế độ offline (không có backdrop): cảnh động vẽ thủ tục như cũ.
-      const info = scene?.backdrop;
+      // Có backend: ảnh nền do backend chọn (thư viện → ảnh tĩnh AI → Wikimedia → phông trung tính), không vẽ cảnh
+      // thủ tục; ảnh foregroundOnly tự đổi sang nền hành động khi ở BACKGROUND_ACTION. Bật "Xem video": clip AI đã
+      // duyệt (tắt tiếng) thay cho ảnh ở lớp nền. Chế độ offline (không có backdrop): cảnh động vẽ thủ tục như cũ.
+      const info = effectiveBackdrop(scene?.backdrop, live.sceneMode);
+      const videoUrl = live.backdropVideoUrl || null;
       const photoUrl = info && info.source !== 'neutral' ? info.imageUrl : undefined;
-      const theme: BackdropTheme = info
+      const theme: BackdropTheme = videoUrl
+        ? 'photo'
+        : info
         ? photoUrl
           ? 'photo'
           : 'neutral'
@@ -411,7 +427,9 @@ export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
             backgroundType: scene?.backgroundType ?? 'HOMELAND',
             sceneMode: live.sceneMode,
           });
-      const key = info
+      const key = videoUrl
+        ? `${live.characterId}|video|${videoUrl}`
+        : info
         ? `${live.characterId}|${theme}|${info.contextTopicKey}|${photoUrl ?? info.title}`
         : `${live.characterId}|${theme}|${scene?.contextKey ?? 'homeland'}`;
       if (key !== backdropKey) {
@@ -431,7 +449,8 @@ export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
         backdropKey = key;
       }
       const externalUrl = info ? photoUrl : scene?.animationWebpUrl || scene?.backgroundPngUrl;
-      backdrop?.setExternalImage(externalUrl ? loadImage(externalImages, externalUrl) : null);
+      if (videoUrl) backdrop?.setExternalImage(videoRef.current);
+      else backdrop?.setExternalImage(externalUrl ? loadImage(externalImages, externalUrl) : null);
 
       const k = smoothstep(modeBlend);
       const camAction = sampleCamera(cameraAction, t);
@@ -493,6 +512,25 @@ export const DynamicHeroStage: React.FC<DynamicHeroStageProps> = (props) => {
         aria-label={`${hero.fullName} — ${sceneData?.contextTitle || hero.homeland}`}
         className="absolute inset-0 h-full w-full"
       />
+
+      {/* Nguồn khung hình cho lớp nền khi bật "Xem video" (ẩn; canvas vẽ lại từng khung dưới model anh hùng). */}
+      {backdropVideoUrl ? (
+        <video
+          key={backdropVideoUrl}
+          ref={videoRef}
+          data-testid="backdrop-video"
+          src={backdropVideoUrl}
+          autoPlay
+          loop
+          playsInline
+          muted
+          preload="auto"
+          disablePictureInPicture
+          aria-hidden="true"
+          tabIndex={-1}
+          className="pointer-events-none absolute left-0 top-0 h-px w-px opacity-0"
+        />
+      ) : null}
 
       {/* Lớp 4: Vignette phủ viền để làm nổi bật khung chat hơi mờ phía trước */}
       <div

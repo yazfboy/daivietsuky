@@ -109,7 +109,7 @@ export interface SceneData {
 
 /** Ảnh nền theo bối cảnh + ghi nguồn. Mọi trường là chữ thuần (hiển thị dạng text, không render HTML). */
 export interface BackdropInfo {
-  source: 'library' | 'wikimedia' | 'neutral';
+  source: 'library' | 'wikimedia' | 'neutral' | 'ai_still';
   contextTopicKey: string;
   title: string;
   subtitle?: string;
@@ -120,6 +120,30 @@ export interface BackdropInfo {
   sourceUrl?: string;
   /** Chú thích ảnh, vd. "Hoàng thành Thăng Long ngày nay" (công trình dựng sau sự kiện). */
   caption?: string;
+  /** Ảnh chụp chỉ hợp khi nhân vật đứng tiền cảnh trò chuyện (vd. hiện trạng di tích ngày nay). */
+  foregroundOnly?: boolean;
+  /** Nền thay ảnh foregroundOnly ở BACKGROUND_ACTION: ảnh tĩnh AI đã duyệt hoặc phông trung tính. */
+  actionBackdrop?: BackdropInfo;
+  /** Ảnh tĩnh AI (source 'ai_still'): nhãn "Ảnh minh họa do AI tạo" + công cụ, người tạo, người duyệt. */
+  aiLabel?: string;
+  tool?: string;
+  creator?: string;
+  reviewedBy?: string;
+  /** Người đã xem và duyệt chính khung hình trích từ clip (bắt buộc với ảnh tĩnh AI). */
+  posterReviewedBy?: string;
+  createdAt?: string;
+}
+
+/** Clip minh họa AI đã qua kiểm tra lúc build (frontend/public/assets/videos/approved.json). Không âm thanh. */
+export interface ApprovedVideo {
+  contextTopicKey: string;
+  videoUrl: string;
+  durationSeconds: number;
+  aiVideoLabel: string;
+  creator: string;
+  tool: string;
+  createdAt: string;
+  reviewedBy: string;
 }
 
 export interface DynamicHeroStageProps {
@@ -129,6 +153,8 @@ export interface DynamicHeroStageProps {
   mouthSyncEnabled: boolean;
   isStreaming: boolean;
   sceneData: SceneData | null;
+  /** Clip AI đã duyệt đang bật "Xem video": phát (tắt tiếng) ở lớp nền, model anh hùng vẫn vẽ đè lên trên. */
+  backdropVideoUrl?: string | null;
 }
 
 export interface SuggestedPrompt {

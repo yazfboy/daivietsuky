@@ -27,6 +27,7 @@ import {
   wakeBackend,
 } from './utils/backendClient';
 import { applyManualSceneMode, canEnterAction, toLocalSafeScene } from './utils/sceneRules';
+import { ApprovedVideoMap, approvedVideoFor, loadApprovedVideos } from './utils/videoLibrary';
 
 function createInitialGreetingMessage(characterId: HeroId): ChatMessage {
   const hero = HEROES[characterId];
@@ -100,6 +101,18 @@ export const App: React.FC = () => {
   // Đánh thức backend (Render ngủ khi rảnh) ngay khi mở trang: trong lúc chờ khóa nút gửi.
   const [serverStatus, setServerStatus] = useState<ServerStatus>('waking');
   useEffect(() => wakeBackend(setServerStatus), []);
+  // Clip minh họa AI đã duyệt (approved.json sinh lúc build). Không có mục → không có nút "Xem video".
+  const [approvedVideos, setApprovedVideos] = useState<ApprovedVideoMap>({});
+  const [videoOn, setVideoOn] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void loadApprovedVideos().then((videos) => {
+      if (alive) setApprovedVideos(videos);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // Mã bối cảnh (context_topic_key) của lượt trước, theo từng nhân vật — gửi kèm mỗi request; backend không giữ state.
   const topicKeyRef = useRef<Record<HeroId, string | null>>({
     tran_hung_dao: null,
@@ -145,6 +158,12 @@ export const App: React.FC = () => {
 
   const currentSceneMode: SceneMode = currentSceneData.sceneMode;
   const currentMouthSyncEnabled: boolean = currentSceneData.mouthSyncEnabled;
+  const currentVideo = approvedVideoFor(approvedVideos, currentSceneData.contextTopicKey);
+  const videoActive = videoOn && currentVideo !== null;
+  // Đổi nhân vật hoặc đổi bối cảnh → tắt video; người dùng tự bấm "Xem video" lại nếu bối cảnh mới cũng có clip.
+  useEffect(() => {
+    setVideoOn(false);
+  }, [selectedHeroId, currentSceneData.contextTopicKey]);
 
   const handleIntroComplete = useCallback((finalProgress: PreloadProgress) => {
     setPreloadProgress(finalProgress);
@@ -367,7 +386,13 @@ export const App: React.FC = () => {
                       ...prev,
                       [heroId]: {
                         ...prev[heroId],
-                        backdrop: { ...info, imageUrl: resolveMediaUrl(info.imageUrl) },
+                        backdrop: {
+                          ...info,
+                          imageUrl: resolveMediaUrl(info.imageUrl),
+                          actionBackdrop: info.actionBackdrop
+                            ? { ...info.actionBackdrop, imageUrl: resolveMediaUrl(info.actionBackdrop.imageUrl) }
+                            : undefined,
+                        },
                       },
                     }
                   : prev
@@ -483,6 +508,7 @@ export const App: React.FC = () => {
         mouthSyncEnabled={currentMouthSyncEnabled}
         isStreaming={isStreaming}
         sceneData={currentSceneData}
+        backdropVideoUrl={videoActive && currentVideo ? currentVideo.videoUrl : null}
       />
 
       {/* 3. Bố cục chính phía trước: Sidebar 3 nhân vật lịch sử & Khung chat hơi mờ (GlassChatBox) */}
@@ -513,6 +539,9 @@ export const App: React.FC = () => {
           actionAllowed={canEnterAction(currentSceneData)}
           onResetChat={handleResetChat}
           serverWaking={serverStatus === 'waking'}
+          video={currentVideo}
+          videoOn={videoActive}
+          onToggleVideo={() => setVideoOn((prev) => !prev)}
         />
       </div>
     </div>

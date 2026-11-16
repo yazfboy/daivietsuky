@@ -22,6 +22,8 @@ backend/.cache/
 # Cảnh động do visual_pipeline sinh ra lúc chạy (không phải mã nguồn)
 frontend/public/assets/scenes/*/
 frontend/public/assets/renders/
+# Danh sách video đã duyệt — do scripts/check_video_library.py sinh lúc build, không sửa tay
+frontend/public/assets/videos/approved.json
 
 # ───────────────────────── Node / frontend ─────────────────────────
 node_modules/

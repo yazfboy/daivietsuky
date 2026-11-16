@@ -1,4 +1,4 @@
-import type { SceneData, SceneMode } from '../types/hero';
+import type { BackdropInfo, SceneData, SceneMode } from '../types/hero';
 
 /**
  * Luật chế độ cảnh phía frontend — KHÔNG chứa bảng HERO_EVENTS (bảng chỉ nằm ở backend).
@@ -30,5 +30,22 @@ export function toLocalSafeScene(scene: SceneData): SceneData {
     actionAllowed: false,
     characterAction:
       'the hero from the reference image stands in the foreground, waist-up, facing the viewer and speaking with calm dignity, subtle hand gestures, mouth clearly visible and unobstructed for lip-sync',
+  };
+}
+
+/**
+ * Ảnh nền thực sự được vẽ ở chế độ hiện tại. Ảnh `foregroundOnly` (vd. "Bãi cọc Cao Quỳ ngày nay") chỉ dùng khi
+ * nhân vật đứng tiền cảnh trò chuyện; ở BACKGROUND_ACTION luôn đổi sang `actionBackdrop` (ảnh tĩnh AI đã duyệt) hoặc
+ * phông trung tính — không bao giờ trả về chính ảnh đó.
+ */
+export function effectiveBackdrop(backdrop: BackdropInfo | undefined, mode: SceneMode): BackdropInfo | undefined {
+  if (!backdrop || mode !== 'BACKGROUND_ACTION' || !backdrop.foregroundOnly) return backdrop;
+  const alt = backdrop.actionBackdrop;
+  if (alt && !alt.foregroundOnly) return alt;
+  return {
+    source: 'neutral',
+    contextTopicKey: backdrop.contextTopicKey,
+    title: backdrop.title,
+    subtitle: backdrop.subtitle,
   };
 }

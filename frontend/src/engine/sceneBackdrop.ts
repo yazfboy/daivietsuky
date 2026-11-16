@@ -9,6 +9,7 @@
  * Lớp tĩnh (trời, núi xa) dựng sẵn vào canvas phụ khi đổi kích thước; mọi thứ chuyển động vẽ lại từng khung.
  */
 import type { BackgroundType, HeroId, SceneMode } from '../types/hero';
+import { CanvasFontState, canvasFont, loadCanvasFont } from './canvasFonts';
 
 const TAU = Math.PI * 2;
 
@@ -303,7 +304,7 @@ export class SceneBackdrop {
   private width = 0;
   private height = 0;
   private staticLayer: HTMLCanvasElement | null = null;
-  private external: HTMLImageElement | null = null;
+  private external: HTMLImageElement | HTMLVideoElement | null = null;
   private lastTime = -1;
 
   private readonly sprites = {
@@ -334,6 +335,9 @@ export class SceneBackdrop {
   private farFires: FirePoint[] = [];
 
   private readonly label: BackdropLabel | null;
+  /** Font của tên địa danh: 'pending' → chưa vẽ chữ (không để canvas rơi về font thiếu dấu tiếng Việt). */
+  private labelFont: CanvasFontState = 'pending';
+  private cancelLabelFont: (() => void) | null = null;
 
   constructor(theme: BackdropTheme, heroId: HeroId, contextKey: string, label: BackdropLabel | null = null) {
     this.theme = theme;
@@ -342,11 +346,30 @@ export class SceneBackdrop {
     this.style = HOMELAND_STYLES[heroId];
     this.seed = hashString(`${theme}:${heroId}:${contextKey}`);
     this.populate();
+    if (theme === 'neutral' && label?.title) {
+      this.cancelLabelFont = loadCanvasFont([500, 600], `${label.title} ${label.subtitle ?? ''}`, (state) => {
+        this.labelFont = state;
+        this.staticLayer = null; // vẽ lại lớp tĩnh (có chữ) ở khung kế tiếp
+      });
+    }
   }
 
-  /** Ảnh/WebP bối cảnh do Phase 2 sinh (nếu có) làm lớp nền thay cho bầu trời vẽ thủ tục. */
-  setExternalImage(image: HTMLImageElement | null): void {
+  /**
+   * Ảnh nền ngoài (ảnh thư viện / Wikimedia / ảnh tĩnh AI) hoặc clip AI đã duyệt (<video> tắt tiếng) làm lớp nền thay
+   * cho cảnh vẽ thủ tục. Video được vẽ lại từng khung; model anh hùng luôn vẽ sau, nằm trên lớp này.
+   */
+  setExternalImage(image: HTMLImageElement | HTMLVideoElement | null): void {
     this.external = image;
+  }
+
+  /** Kích thước nguồn ngoài nếu đã sẵn sàng để vẽ (ảnh đã decode / video đã có khung hình), không thì null. */
+  private externalSize(): [number, number] | null {
+    const src = this.external;
+    if (!src) return null;
+    if ('videoWidth' in src) {
+      return src.readyState >= 2 && src.videoWidth > 0 && src.videoHeight > 0 ? [src.videoWidth, src.videoHeight] : null;
+    }
+    return src.complete && src.naturalWidth > 0 ? [src.naturalWidth, src.naturalHeight] : null;
   }
 
   private populate(): void {
@@ -618,10 +641,11 @@ export class SceneBackdrop {
     ctx.scale(1.06 * camera.zoom, 1.06 * camera.zoom);
     ctx.translate(-w / 2, -h / 2);
     this.layer(ctx, camera, 0.25, () => {
-      if (this.external && this.external.complete && this.external.naturalWidth > 0) {
-        const img = this.external;
-        const k = Math.max(w / img.naturalWidth, h / img.naturalHeight);
-        ctx.drawImage(img, (w - img.naturalWidth * k) / 2, (h - img.naturalHeight * k) / 2, img.naturalWidth * k, img.naturalHeight * k);
+      const size = this.externalSize();
+      if (this.external && size) {
+        const [iw, ih] = size;
+        const k = Math.max(w / iw, h / ih);
+        ctx.drawImage(this.external, (w - iw * k) / 2, (h - ih * k) / 2, iw * k, ih * k);
       } else if (this.staticLayer) {
         ctx.drawImage(this.staticLayer, 0, 0, w, h);
       }
@@ -703,16 +727,16 @@ export class SceneBackdrop {
     edge.addColorStop(1, 'rgba(96,62,28,0.45)');
     ctx.fillStyle = edge;
     ctx.fillRect(0, 0, w, h);
-    if (withLabel && this.label?.title) {
+    if (withLabel && this.label?.title && this.labelFont !== 'pending') {
       const size = Math.max(22, Math.min(64, w * 0.042));
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = 'rgba(58,38,20,0.78)';
-      ctx.font = `600 ${size}px "Cormorant Garamond", "Noto Serif", Georgia, serif`;
+      ctx.font = canvasFont(600, size, this.labelFont);
       ctx.fillText(this.label.title, w * 0.6, h * 0.2, w * 0.7);
       if (this.label.subtitle) {
         ctx.fillStyle = 'rgba(58,38,20,0.55)';
-        ctx.font = `500 ${size * 0.5}px "Cormorant Garamond", "Noto Serif", Georgia, serif`;
+        ctx.font = canvasFont(500, size * 0.5, this.labelFont);
         ctx.fillText(this.label.subtitle, w * 0.6, h * 0.2 + size * 0.95, w * 0.6);
       }
       ctx.strokeStyle = 'rgba(58,38,20,0.35)';
@@ -1704,6 +1728,8 @@ export class SceneBackdrop {
   }
 
   dispose(): void {
+    this.cancelLabelFont?.();
+    this.cancelLabelFont = null;
     this.smoke.clear();
     this.embers.clear();
     this.motes.clear();
