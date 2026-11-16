@@ -226,7 +226,7 @@ def test_heroes_untouched() -> None:
         ignored = subprocess.run(["git", "check-ignore", "-q", str(review)], cwd=ROOT).returncode == 0
         page = review.read_text(encoding="utf-8")
         cands = sorted((ROOT / "scene_candidates/heroes/tran_hung_dao").glob("0*_seed*[0-9].png"))
-        check(ignored and 3 <= len(cands) <= 5 and all(f"thd_{c.name}" in page for c in cands)
+        check(ignored and 3 <= len(cands) <= 5 and all(f"tran_hung_dao/{c.name}" in page for c in cands)
               and "Nguyễn Trãi" in page and "Quang Trung" in page,
               "review_heroes.html (gitignore) có đủ ứng viên Trần Hưng Đạo + ảnh Nguyễn Trãi, Quang Trung",
               f"{len(cands)} ứng viên")
