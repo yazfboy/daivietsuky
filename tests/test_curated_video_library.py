@@ -49,7 +49,8 @@ HERO_SHA256 = {
     "nguyen_trai.png": "c59eba83ccc695a26e71540b5f2716ad187bf6641385d3512b344b634231f0ad",
     "quang_trung.png": "eea5e1de7fd3e42c41055c3da2a7d7e9f1d2f43a87bb708045a53b7f119c975c",
 }
-NEUTRAL_ONLY = ("khang_chien_mong_nguyen_1285", "hich_tuong_si", "ngoc_hoi_dong_da_1789", "bach_dang_1288",
+# bach_dang_1288 → ảnh Bãi cọc Cao Quỳ foreground_only (nhóm duyệt 16/11/2026)
+NEUTRAL_ONLY = ("khang_chien_mong_nguyen_1285", "hich_tuong_si", "ngoc_hoi_dong_da_1789",
                 "khang_chien_mong_nguyen_1287_1288", "rach_gam_xoai_mut_1785", "len_ngoi_nui_ban_1788",
                 "tot_dong_chuc_dong_1426", "chuong_duong_ham_tu_1285", "le_chi_vien_1442", "que_huong_nhi_khe")
 CANDIDATES = {  # scene_candidates/dot2 (gitignore — chỉ kiểm khi có trên máy)
@@ -476,9 +477,10 @@ def test_real_data() -> None:
     print("\n#V5 — Dữ liệu thật trên nhánh: không tự thêm ảnh/clip, giữ quyết định của nhóm")
     raw = json.loads((ROOT / "backend/data/scene_library.json").read_text(encoding="utf-8"))["scenes"]
     check(all(raw[k].get("neutral_only") is True for k in NEUTRAL_ONLY),
-          "Giữ nguyên toàn bộ neutral_only: true (11 key)")
-    check(not any("foreground_only" in v or "ai_still" in v for v in raw.values()),
-          "Chưa có mục nào được tự gắn foreground_only / ai_still (chờ nhóm duyệt ảnh và clip)")
+          f"Giữ nguyên neutral_only: true ({len(NEUTRAL_ONLY)} key)")
+    check([k for k, v in raw.items() if "foreground_only" in v] == ["bach_dang_1288"]
+          and not any("ai_still" in v for v in raw.values()),
+          "Chỉ bach_dang_1288 có foreground_only (nhóm duyệt); chưa có ai_still nào (chờ clip)")
     vlib = VideoLibrary.load()
     check(len(vlib) == 0, "video_library.json chỉ có mục mẫu '_mau_…' — không tự thêm clip")
     vdir = FRONTEND / "public" / "assets" / "videos"

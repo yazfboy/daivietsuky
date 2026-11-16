@@ -7,7 +7,7 @@ import {
   MessageSquarePlus,
   Sparkles,
 } from 'lucide-react';
-import { HERO_LIST } from '../data/heroes';
+import { AI_PORTRAIT_LABEL, HERO_LIST } from '../data/heroes';
 import { HeroCharacter, HeroId, PreloadProgress, SceneMode } from '../types/hero';
 
 export interface HeroSidebarProps {
@@ -165,6 +165,14 @@ export const HeroSidebar: React.FC<HeroSidebarProps> = ({
                       <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-500">
                         #{hero.id}
                       </p>
+                      {hero.portraitAiGenerated && (
+                        <p
+                          data-testid="sidebar-portrait-ai-label"
+                          className="mt-0.5 truncate text-[10px] font-medium text-amber-200/90"
+                        >
+                          {AI_PORTRAIT_LABEL}
+                        </p>
+                      )}
                     </div>
                   </button>
                 );

@@ -185,6 +185,11 @@ export interface HeroCharacter {
   selfPronoun: string;
   listenerAddress: string;
   heroImageUrl: string;
+  /**
+   * Ảnh chân dung do AI tạo (FLUX.1-schnell) → luôn hiện nhãn "Chân dung minh họa do AI tạo" ở thẻ chọn nhân vật và
+   * cạnh tên nhân vật trên sân khấu. Phải khớp trường `source` trong `{id}.meta.json` (test kiểm).
+   */
+  portraitAiGenerated: boolean;
   rigUrl: string;
   metaUrl: string;
   accentColor: string;
