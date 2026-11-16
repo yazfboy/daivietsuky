@@ -8,6 +8,8 @@
     2. toàn bộ lịch sử commit của MỌI nhánh, gồm nhánh ``gh-pages`` cũ — mọi blob trong ``git rev-list --all
        --objects`` và toàn văn ``git log -p --all``;
     3. ``frontend/dist/`` — sau khi chạy ``npm run build`` (cấu hình production) NGAY TRƯỚC khi quét.
+* Token Hugging Face: nếu ``.env`` có ``HF_TOKEN`` (kể cả dạng ``export HF_TOKEN=...``) thì token đó cùng mọi đoạn
+  con ≥ 12 ký tự được quét như API key (repo, lịch sử mọi nhánh, ``frontend/dist/``). Không có thì báo "không có".
 * Chỉ in tên biến + ĐẠT / KHÔNG ĐẠT (kèm đường dẫn file / commit nếu lộ, không in nội dung).
   Nếu key từng lộ trong lịch sử: báo đổi key mới ngay — xóa file không xóa được lịch sử Git.
 """
@@ -25,18 +27,24 @@ ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
 DIST = ROOT / "frontend" / "dist"
 MIN_FRAGMENT = 12
+HF_TOKEN_NAMES = ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACEHUB_API_TOKEN")
 for stream in (sys.stdout, sys.stderr):
     if hasattr(stream, "reconfigure"):
         stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-def read_secrets() -> list[tuple[str, str]]:
-    """(tên, giá trị) của mọi bí mật trong .env. Dòng dạng ``TÊN=giá_trị`` lấy TÊN; dòng chỉ có key → KEY_n."""
+def read_secrets(env_path: Path = ENV_PATH) -> list[tuple[str, str]]:
+    """(tên, giá trị) của mọi bí mật trong .env. Dòng dạng ``TÊN=giá_trị`` lấy TÊN; dòng chỉ có key → KEY_n.
+
+    Gồm cả ``HF_TOKEN`` (token Hugging Face cho gradio_client) nếu có — xem ``HF_TOKEN_NAMES``.
+    """
     secrets: list[tuple[str, str]] = []
-    for raw in ENV_PATH.read_text(encoding="utf-8").splitlines():
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
+        if line.startswith("export "):
+            line = line[len("export "):].strip()
         name = ""
         if "=" in line:
             name, line = (part.strip() for part in line.split("=", 1))
@@ -132,8 +140,10 @@ def main() -> int:
         print("KHÔNG ĐẠT — .env không có giá trị nào ≥ 12 ký tự")
         return 2
     secrets = [(name, fragment_pattern(value)) for name, value in raw]
+    hf = [name for name, _ in raw if name in HF_TOKEN_NAMES]
     del raw
     print(f"Đối chiếu {len(secrets)} bí mật trong .env (bản đầy đủ + mọi đoạn con ≥ {MIN_FRAGMENT} ký tự).")
+    print(f"  Token Hugging Face: {'có ' + ', '.join(hf) + ' → đã đưa vào danh sách quét' if hf else 'không có trong .env'}")
     ignored = subprocess.run(["git", "check-ignore", "-q", ".env"], cwd=ROOT).returncode == 0
     tracked = bool(git("ls-files", ".env").strip())
     print(f"  .env nằm trong .gitignore: {'ĐẠT' if ignored else 'KHÔNG ĐẠT'}")

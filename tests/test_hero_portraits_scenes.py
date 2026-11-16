@@ -8,6 +8,9 @@ Chạy từ thư mục gốc:  python tests/test_hero_portraits_scenes.py
   nguồn; BACKGROUND_ACTION (Trần Hưng Đạo) vẫn là nền giấy dó chờ clip; không gọi Wikimedia.
 * #P3 rach_gam_xoai_mut_1785 giữ neutral_only (ảnh rạch có công trình hiện đại).
 * #P4 Ảnh nhân vật chưa bị thay: 3 PNG nguyên byte, không có .edges_clean, ứng viên chỉ nằm trong scene_candidates/.
+* #P5 Cổng duyệt chân dung: ảnh mới thiếu reviewed_by / sai mã băm / sai cờ nhãn AI → chặn build;
+  scripts/promote_hero_portrait.py bắt buộc --reviewer.
+* #P6 scan_secrets.py đưa HF_TOKEN (nếu có trong .env) vào danh sách quét, kể cả mọi đoạn con ≥ 12 ký tự.
 """
 
 from __future__ import annotations
@@ -231,10 +234,112 @@ def test_heroes_untouched() -> None:
         print("  [INFO] Không có scene_candidates/ trên máy này (gitignore) — bỏ qua kiểm trang duyệt")
 
 
+# ─────────────────────────── #P5 ───────────────────────────
+def test_review_gate() -> None:
+    print("\n#P5 — Cổng duyệt chân dung (reviewed_by)")
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import check_hero_portraits  # noqa: F401  (kiểm import được)
+    import promote_hero_portrait as promote
+    from PIL import Image
+
+    from backend.core.hero_portraits import HERO_IDS, LEGACY_PORTRAITS, portrait_status, sha256_file
+
+    real = {h: portrait_status(h) for h in HERO_IDS}
+    check(all(st.status == "legacy" for st in real.values()), "3 ảnh trên web hiện tại: ảnh cũ được giữ (legacy)",
+          f"{ {h: st.status for h, st in real.items()} }")
+    metas = {h: json.loads((HEROES_DIR / f"{h}.meta.json").read_text(encoding="utf-8")) for h in HERO_IDS}
+    check(all("reviewed_by" in m and m.get("review_status") == "legacy" for m in metas.values()),
+          "meta.json của 3 ảnh hiện tại có trường reviewed_by (rỗng) + review_status 'legacy'")
+    check(set(LEGACY_PORTRAITS.values()) == set(HERO_SHA256.values()), "Danh sách ảnh cũ đúng 3 mã băm hiện tại")
+    workflow = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    check(0 < workflow.find("check_hero_portraits.py") < workflow.find("npm run build"),
+          "deploy.yml chạy check_hero_portraits.py TRƯỚC npm run build")
+
+    with tempfile.TemporaryDirectory(prefix="dvsk_p5_") as tmp:
+        tmp = Path(tmp)
+        heroes = tmp / "heroes"
+        shutil.copytree(HEROES_DIR, heroes)
+        ts = tmp / "heroes.ts"
+        shutil.copyfile(FRONTEND / "src/data/heroes.ts", ts)
+        cand_dir = tmp / "cand"
+        cand_dir.mkdir()
+        cand = cand_dir / "01_test_seed1.png"
+        img = Image.new("RGBA", (64, 96), (0, 0, 0, 0))
+        img.paste((150, 30, 30, 255), (16, 10, 48, 90))
+        img.save(cand)
+        (cand_dir / "01_test_seed1.json").write_text(json.dumps({
+            "character_id": "tran_hung_dao", "space_id": "black-forest-labs/FLUX.1-schnell", "model": "FLUX.1-schnell",
+            "seed": 1, "prompt": "p", "reviewed_by": ""}), encoding="utf-8")
+        rig_calls = []
+
+        def fake_rig(hero_id, layer):
+            rig_calls.append(hero_id)
+            return {"character_id": hero_id, "joints": {}}
+
+        before = sha256_file(heroes / "tran_hung_dao.png")
+        try:
+            promote.promote(cand, "   ", heroes_dir=heroes, heroes_ts=ts, rig_builder=fake_rig)
+            refused = False
+        except ValueError:
+            refused = True
+        check(refused and sha256_file(heroes / "tran_hung_dao.png") == before and not rig_calls,
+              "Thay ảnh khi chưa có người duyệt (--reviewer rỗng) → từ chối, ảnh trên web giữ nguyên")
+        msg = promote.promote(cand, "Cô giáo Sử A", heroes_dir=heroes, heroes_ts=ts, rig_builder=fake_rig,
+                              today="2026-11-17")
+        st = portrait_status("tran_hung_dao", heroes, ts)
+        meta = json.loads((heroes / "tran_hung_dao.meta.json").read_text(encoding="utf-8"))
+        check(st.status == "reviewed" and meta["reviewed_by"] == "Cô giáo Sử A" and meta["reviewed_at"] == "2026-11-17"
+              and meta["image_sha256"] == sha256_file(heroes / "tran_hung_dao.png") and rig_calls == ["tran_hung_dao"],
+              "Có --reviewer → thay ảnh, dò lại rig, meta.json ghi reviewed_by / reviewed_at / image_sha256", msg)
+        check(promote.HEROES_TS != ts and "portraitAiGenerated: true," in ts.read_text(encoding="utf-8").split(
+            "id: 'tran_hung_dao'")[1].split("id: 'nguyen_trai'")[0],
+              "Thay bằng ảnh AI → bật portraitAiGenerated (nhãn 'Chân dung minh họa do AI tạo') cho nhân vật đó")
+        Image.new("RGBA", (64, 96), (9, 9, 9, 0)).save(heroes / "tran_hung_dao.png")
+        check(portrait_status("tran_hung_dao", heroes, ts).status == "blocked",
+              "Ảnh bị đổi sau khi duyệt (sai image_sha256) → chặn build")
+        meta.pop("reviewed_by")
+        meta["image_sha256"] = sha256_file(heroes / "tran_hung_dao.png")
+        (heroes / "tran_hung_dao.meta.json").write_text(json.dumps(meta), encoding="utf-8")
+        blocked = portrait_status("tran_hung_dao", heroes, ts)
+        check(blocked.status == "blocked" and any("reviewed_by" in p for p in blocked.problems),
+              "Ảnh mới thiếu reviewed_by → chặn build (chưa được thay lên web)")
+        ts.write_text(ts.read_text(encoding="utf-8").replace("portraitAiGenerated: true,", "portraitAiGenerated: false,", 1),
+                      encoding="utf-8")
+        check(portrait_status("nguyen_trai", heroes, ts).status == "legacy"
+              and portrait_status("tran_hung_dao", heroes, ts).status == "blocked",
+              "Cờ nhãn AI trong heroes.ts lệch nguồn ảnh → chặn")
+
+
+# ─────────────────────────── #P6 ───────────────────────────
+def test_hf_token_scan() -> None:
+    print("\n#P6 — scan_secrets.py quét cả HF_TOKEN")
+    import secrets as pysecrets
+    import string
+
+    sys.path.insert(0, str(ROOT / "tests"))
+    import scan_secrets
+
+    alphabet = string.ascii_letters + string.digits
+    fake = "".join(pysecrets.choice(alphabet) for _ in range(30))  # sinh lúc chạy, không có chuỗi token trong repo
+    with tempfile.TemporaryDirectory(prefix="dvsk_p6_") as tmp:
+        env = Path(tmp) / ".env"
+        env.write_text(f"# test\nexport HF_TOKEN={fake}\nOTHER=short\n", encoding="utf-8")
+        found = scan_secrets.read_secrets(env)
+    names = [n for n, _ in found]
+    check(names == ["HF_TOKEN"] and found[0][1] == fake, "Dòng 'export HF_TOKEN=…' trong .env được đưa vào danh sách quét")
+    pattern = scan_secrets.fragment_pattern(fake)
+    check(bool(pattern.search(f"const x = '{fake[7:19]}';".encode())) and bool(pattern.search(fake.encode()))
+          and not pattern.search(b"khong co token nao o day 1234567890"),
+          "Bắt được cả token đầy đủ lẫn đoạn con 12 ký tự; không báo nhầm")
+    check("HF_TOKEN" in scan_secrets.HF_TOKEN_NAMES, "Danh sách tên token Hugging Face gồm HF_TOKEN")
+
+
 async def main() -> int:
     r = test_portrait_labels()
     await test_scenes(r)
     test_heroes_untouched()
+    test_review_gate()
+    test_hf_token_scan()
     passed = sum(RESULTS)
     print(f"\nKẾT QUẢ: {passed} PASS · {len(RESULTS) - passed} FAIL")
     return 0 if passed == len(RESULTS) else 1
