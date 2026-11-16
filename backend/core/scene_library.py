@@ -13,8 +13,10 @@ không được thì dùng phông trung tính. Code KHÔNG tự sinh hay tự t�
   trò chuyện (FOREGROUND_TALKING). Ở BACKGROUND_ACTION bỏ ảnh này: dùng ảnh tĩnh AI đã duyệt (``ai_still``) nếu có,
   không thì phông trung tính (KHÔNG tìm Wikimedia).
 * ``ai_still`` — khung hình trích từ clip AI đã duyệt trong ``video_library.json`` (do
-  ``scripts/extract_action_posters.py`` ghi): ``poster_path``, ``tool``, ``creator``, ``reviewed_by``, ``created_at``,
-  ``label`` = "Ảnh minh họa do AI tạo". Chỉ dùng khi file tồn tại và đủ người tạo / công cụ / người duyệt.
+  ``scripts/extract_action_posters.py --approve`` ghi SAU KHI người thật đã xem khung hình): ``poster_path``, ``tool``,
+  ``creator``, ``reviewed_by`` (người duyệt clip), ``poster_reviewed_by`` (người duyệt chính khung hình — clip đạt
+  nhưng khung trích ra vẫn có thể nhòe), ``created_at``, ``label`` = "Ảnh minh họa do AI tạo". Chỉ dùng khi file tồn
+  tại và đủ người tạo / công cụ / người duyệt clip / người duyệt ảnh.
 """
 
 from __future__ import annotations
@@ -59,6 +61,20 @@ class AiStill:
     creator: str
     reviewed_by: str
     created_at: str
+    poster_reviewed_by: str = ""
+    poster_reviewed_at: str = ""
+
+    def problems(self) -> list[str]:
+        """Lý do ảnh tĩnh AI chưa được dùng (chưa tính file trên đĩa); rỗng = đủ điều kiện."""
+        issues = []
+        if self.label != AI_IMAGE_LABEL:
+            issues.append(f"label phải là \"{AI_IMAGE_LABEL}\"")
+        for name in ("tool", "creator", "reviewed_by"):
+            if not getattr(self, name):
+                issues.append(f"thiếu {name}")
+        if not self.poster_reviewed_by:
+            issues.append("thiếu poster_reviewed_by (chưa có người xem và duyệt khung hình trích ra)")
+        return issues
 
     def to_json(self) -> dict[str, str]:
         return {
@@ -69,6 +85,8 @@ class AiStill:
             "creator": self.creator,
             "reviewed_by": self.reviewed_by,
             "created_at": self.created_at,
+            "poster_reviewed_by": self.poster_reviewed_by,
+            "poster_reviewed_at": self.poster_reviewed_at,
         }
 
 
@@ -98,11 +116,9 @@ class LibraryEntry:
         return _scene_file(public_dir, self.image)
 
     def ai_still_file(self, public_dir: Path = PUBLIC_DIR) -> Path | None:
-        """File ảnh tĩnh AI nếu đủ nhãn, công cụ, người tạo, người duyệt và file tồn tại (``neutral_only`` → None)."""
+        """File ảnh tĩnh AI nếu đủ nhãn, công cụ, người tạo, người duyệt clip + khung hình và file tồn tại."""
         still = self.ai_still
-        if self.neutral_only or still is None:
-            return None
-        if still.label != AI_IMAGE_LABEL or not (still.tool and still.creator and still.reviewed_by):
+        if self.neutral_only or still is None or still.problems():
             return None
         return _scene_file(public_dir, still.poster_path)
 
@@ -152,6 +168,8 @@ class SceneLibrary:
                     creator=text("creator", still),
                     reviewed_by=text("reviewed_by", still),
                     created_at=text("created_at", still),
+                    poster_reviewed_by=text("poster_reviewed_by", still),
+                    poster_reviewed_at=text("poster_reviewed_at", still),
                 )
             entries[key] = LibraryEntry(
                 key=key,

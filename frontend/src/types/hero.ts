@@ -129,6 +129,8 @@ export interface BackdropInfo {
   tool?: string;
   creator?: string;
   reviewedBy?: string;
+  /** Người đã xem và duyệt chính khung hình trích từ clip (bắt buộc với ảnh tĩnh AI). */
+  posterReviewedBy?: string;
   createdAt?: string;
 }
 

@@ -119,7 +119,8 @@ export const StageInfoBar: React.FC<StageInfoBarProps> = ({
             {aiCredits([
               ['Công cụ', backdrop.tool],
               ['Thực hiện', backdrop.creator],
-              ['Duyệt', backdrop.reviewedBy],
+              ['Duyệt clip', backdrop.reviewedBy],
+              ['Duyệt ảnh', backdrop.posterReviewedBy],
             ])}
           </span>
         </div>

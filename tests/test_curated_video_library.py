@@ -238,6 +238,21 @@ def test_build_script() -> None:
             ["approved.json", "bach_dang_1288.mp4", "ngoc_hoi_dong_da_1789.mp4", "rach_gam_xoai_mut_1785.mp4",
              "khang_chien_mong_nguyen_1285.mp4", "tha_vao_khong_khai_bao.mp4"]),
               "--dist không xóa gì trong frontend/public (file gốc của nhóm)")
+        sl = Path(tmp) / "scene_library.json"
+        (pub / "assets" / "scenes").mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (8, 8)).save(pub / "assets" / "scenes" / "bach_dang_1288.jpg", "JPEG")
+        still = {"poster_path": "/assets/scenes/bach_dang_1288.jpg", "video_key": "bach_dang_1288", "label": AI_IMAGE_LABEL,
+                 "tool": "Công cụ AI", "creator": "Nhóm", "reviewed_by": "Người duyệt A", "created_at": "2026-11-16"}
+        write_json(sl, {"scenes": {"bach_dang_1288": {"title": "x", "ai_still": still},
+                                   "ngoc_hoi_dong_da_1789": {"title": "y", "ai_still": dict(
+                                       still, poster_path="/assets/scenes/bach_dang_1288.jpg",
+                                       poster_reviewed_by="Người duyệt ảnh B")}}})
+        out = io.StringIO()
+        check_video_library.run(lib_path, pub, None, out, scene_library_path=sl)
+        text = out.getvalue()
+        check("ẢNH TĨNH AI KHÔNG DÙNG  bach_dang_1288: thiếu poster_reviewed_by" in text
+              and "ẢNH TĨNH AI DÙNG  ngoc_hoi_dong_da_1789" in text,
+              "Build báo ảnh tĩnh AI thiếu poster_reviewed_by là KHÔNG DÙNG; có người duyệt ảnh thì DÙNG")
         (Path(tmp) / "hong.json").write_text("{không phải json", encoding="utf-8")
         check(check_video_library.run(Path(tmp) / "hong.json", pub, None, io.StringIO()) == 1,
               "video_library.json hỏng → thoát mã 1 (build dừng)")
@@ -282,54 +297,75 @@ def test_poster_extraction() -> None:
         scenes_dir = pub / "assets" / "scenes"
         scenes_dir.mkdir(parents=True)
         (scenes_dir / "khang_chien_mong_nguyen_1285.jpg").write_bytes(b"anh-co-san")
+        pending_dir = Path(tmp) / "scene_candidates" / "posters"
         kwargs = dict(library_path=lib_path, video_library_path=vlib_path, public_dir=pub)
+        ext = dict(kwargs, pending_dir=pending_dir)
 
         calls: list[tuple[Path, float]] = []
-        dry = posters.extract_action_posters(**kwargs, extractor=fake_extractor(calls), dry_run=True)
+        dry = posters.extract_pending_posters(**ext, extractor=fake_extractor(calls), dry_run=True)
         check(not calls and json.loads(lib_path.read_text(encoding="utf-8")) == scene_fixture()
               and {r.key: r.status for r in dry}["bach_dang_1288"] == "would_extract",
               "--dry-run: chỉ báo, không trích, không sửa scene_library.json")
 
-        results = {r.key: r for r in posters.extract_action_posters(**kwargs, extractor=fake_extractor(calls))}
+        results = {r.key: r for r in posters.extract_pending_posters(**ext, extractor=fake_extractor(calls))}
+        check(results["bach_dang_1288"].status == "pending_review" and (pending_dir / "bach_dang_1288.jpg").is_file()
+              and len(calls) == 1 and calls[0][0].name == "bach_dang_1288.mp4" and calls[0][1] == 4.0,
+              "Bước 1: clip hợp lệ → trích đúng 1 khung (giữa clip, 4.0 s) vào scene_candidates/posters/ CHỜ DUYỆT")
+        check(json.loads(lib_path.read_text(encoding="utf-8")) == scene_fixture()
+              and not (scenes_dir / "bach_dang_1288.jpg").exists(),
+              "Bước 1 KHÔNG sửa scene_library.json, KHÔNG ghi vào frontend/public (chưa ai xem khung hình)")
+        data = json.loads(lib_path.read_text(encoding="utf-8"))["scenes"]
+        check(results["ngoc_hoi_dong_da_1789"].status == "skipped" and not (pending_dir / "ngoc_hoi_dong_da_1789.jpg").exists(),
+              "Clip thiếu reviewed_by → không trích", results["ngoc_hoi_dong_da_1789"].detail)
+        check(results["rach_gam_xoai_mut_1785"].status == "skipped" and not (pending_dir / "rach_gam_xoai_mut_1785.jpg").exists(),
+              "Clip có mặt nhân vật (has_hero_face true) → không trích")
+        check(results["khang_chien_mong_nguyen_1285"].status == "error"
+              and (scenes_dir / "khang_chien_mong_nguyen_1285.jpg").read_bytes() == b"anh-co-san",
+              "File poster đã tồn tại → báo lỗi, KHÔNG ghi đè")
+        check("hich_tuong_si" not in results and not (pending_dir / "hich_tuong_si.jpg").exists(),
+              "Key không thuộc HERO_EVENTS (hich_tuong_si) không bị đụng dù có clip hợp lệ")
+
+        no_reviewer = posters.approve_poster("bach_dang_1288", "  ", **kwargs, pending_dir=pending_dir)
+        check(no_reviewer.status == "error" and json.loads(lib_path.read_text(encoding="utf-8")) == scene_fixture(),
+              "--approve không có tên người duyệt → từ chối, không sửa gì")
+        bad_key = posters.approve_poster("ngoc_hoi_dong_da_1789", "Người duyệt ảnh B", **kwargs, pending_dir=pending_dir)
+        check(bad_key.status == "error" and data["ngoc_hoi_dong_da_1789"].get("neutral_only"),
+              "--approve key có clip chưa hợp lệ → từ chối", bad_key.detail)
+        ok = posters.approve_poster("bach_dang_1288", "Người duyệt ảnh B", **kwargs, pending_dir=pending_dir,
+                                    today="2026-11-17")
         data = json.loads(lib_path.read_text(encoding="utf-8"))["scenes"]
         bd = data["bach_dang_1288"]
-        check(results["bach_dang_1288"].status == "extracted" and (scenes_dir / "bach_dang_1288.jpg").is_file()
-              and len(calls) == 1 and calls[0][0].name == "bach_dang_1288.mp4" and calls[0][1] == 4.0,
-              "Clip hợp lệ → trích đúng 1 khung (giữa clip, 4.0 s) ra /assets/scenes/bach_dang_1288.jpg")
+        check(ok.status == "approved" and (scenes_dir / "bach_dang_1288.jpg").is_file()
+              and not (pending_dir / "bach_dang_1288.jpg").exists(),
+              "Bước 2 (--approve): chép khung hình đã xem sang /assets/scenes/bach_dang_1288.jpg")
         check("neutral_only" not in bd and bd["ai_still"] == {
             "poster_path": "/assets/scenes/bach_dang_1288.jpg", "video_key": "bach_dang_1288", "label": AI_IMAGE_LABEL,
             "tool": "Công cụ AI thử nghiệm", "creator": "Nhóm Đại Việt Sử Ký", "reviewed_by": "Người duyệt A",
-            "created_at": "2026-11-16"} and bd["review_note"] == "ghi chú của nhóm",
-              "Tự gỡ neutral_only + ghi ai_still (nhãn, tool, creator, reviewed_by); giữ ghi chú của nhóm")
-        check(results["ngoc_hoi_dong_da_1789"].status == "skipped" and data["ngoc_hoi_dong_da_1789"].get("neutral_only")
-              and not (scenes_dir / "ngoc_hoi_dong_da_1789.jpg").exists(),
-              "Clip thiếu reviewed_by → không trích, giữ neutral_only", results["ngoc_hoi_dong_da_1789"].detail)
-        check(results["rach_gam_xoai_mut_1785"].status == "skipped" and data["rach_gam_xoai_mut_1785"].get("neutral_only"),
-              "Clip có mặt nhân vật (has_hero_face true) → không trích, giữ neutral_only")
-        check(results["khang_chien_mong_nguyen_1285"].status == "error"
-              and (scenes_dir / "khang_chien_mong_nguyen_1285.jpg").read_bytes() == b"anh-co-san"
-              and data["khang_chien_mong_nguyen_1285"].get("neutral_only"),
-              "File poster đã tồn tại → báo lỗi, KHÔNG ghi đè, không gỡ neutral_only")
-        check("hich_tuong_si" not in results and data["hich_tuong_si"].get("neutral_only")
-              and not (scenes_dir / "hich_tuong_si.jpg").exists(),
-              "Key không thuộc HERO_EVENTS (hich_tuong_si) không bị đụng dù có clip hợp lệ")
-        again = {r.key: r for r in posters.extract_action_posters(**kwargs, extractor=fake_extractor(calls))}
+            "created_at": "2026-11-16", "poster_reviewed_by": "Người duyệt ảnh B",
+            "poster_reviewed_at": "2026-11-17"} and bd["review_note"] == "ghi chú của nhóm",
+              "Bước 2 gỡ neutral_only + ghi ai_still kèm poster_reviewed_by / poster_reviewed_at; giữ ghi chú nhóm")
+        check(all(data[k].get("neutral_only") for k in ("ngoc_hoi_dong_da_1789", "rach_gam_xoai_mut_1785",
+                                                         "khang_chien_mong_nguyen_1285", "hich_tuong_si")),
+              "Các key khác giữ nguyên neutral_only")
+        again = {r.key: r for r in posters.extract_pending_posters(**ext, extractor=fake_extractor(calls))}
         check(again["bach_dang_1288"].status == "skipped" and len(calls) == 1, "Chạy lại → bỏ qua key đã có ảnh tĩnh AI")
 
         def broken(video: Path, out: Path, at_s: float) -> None:
             raise posters.FrameExtractionError("ffmpeg lỗi giả lập")
         write_json(lib_path, scene_fixture())
         (scenes_dir / "bach_dang_1288.jpg").unlink()
-        failed = {r.key: r for r in posters.extract_action_posters(**kwargs, extractor=broken)}
-        check(failed["bach_dang_1288"].status == "error" and not (scenes_dir / "bach_dang_1288.jpg").exists()
+        failed = {r.key: r for r in posters.extract_pending_posters(**ext, extractor=broken)}
+        check(failed["bach_dang_1288"].status == "error" and not (pending_dir / "bach_dang_1288.jpg").exists()
               and json.loads(lib_path.read_text(encoding="utf-8")) == scene_fixture(),
               "Trích lỗi → không để lại file, không sửa scene_library.json")
 
         def not_jpeg(video: Path, out: Path, at_s: float) -> None:
             out.write_bytes(b"khong phai anh")
-        bad = {r.key: r for r in posters.extract_action_posters(**kwargs, extractor=not_jpeg)}
-        check(bad["bach_dang_1288"].status == "error" and not (scenes_dir / "bach_dang_1288.jpg").exists(),
+        bad = {r.key: r for r in posters.extract_pending_posters(**ext, extractor=not_jpeg)}
+        check(bad["bach_dang_1288"].status == "error" and not (pending_dir / "bach_dang_1288.jpg").exists(),
               "Khung hình không phải JPEG hợp lệ → loại")
+        missing = posters.approve_poster("bach_dang_1288", "Người duyệt ảnh B", **kwargs, pending_dir=pending_dir)
+        check(missing.status == "error" and "bước 1" in missing.detail, "--approve khi chưa có khung hình chờ duyệt → từ chối")
     if shutil.which("ffmpeg") is None:
         try:
             posters.ffmpeg_extractor(Path("x.mp4"), Path("x.jpg"), 1.0)
@@ -363,7 +399,8 @@ def directive(key: str, mode: str = "FOREGROUND_TALKING") -> SceneDirective:
 async def test_foreground_only() -> None:
     print("\n#V4 — foreground_only + ai_still trong BackdropResolver")
     still = {"poster_path": "/assets/scenes/{key}.jpg", "video_key": "{key}", "label": AI_IMAGE_LABEL,
-             "tool": "Công cụ AI", "creator": "Nhóm", "reviewed_by": "Người duyệt A", "created_at": "2026-11-16"}
+             "tool": "Công cụ AI", "creator": "Nhóm", "reviewed_by": "Người duyệt A", "created_at": "2026-11-16",
+             "poster_reviewed_by": "Người duyệt ảnh B"}
 
     def ai(key: str, **over: str) -> dict:
         return {k: (v.format(key=key) if isinstance(v, str) else v) for k, v in {**still, **over}.items()}
@@ -383,6 +420,8 @@ async def test_foreground_only() -> None:
         "fg_missing_file": {"title": "d", "kind": "battle", **ph("fg_missing_file"), "foreground_only": True},
         "neutral_with_ai": {"title": "e", "kind": "battle", "neutral_only": True, "ai_still": ai("neutral_with_ai")},
         "ai_unreviewed": {"title": "f", "kind": "battle", "ai_still": ai("ai_unreviewed", reviewed_by="")},
+        "poster_unreviewed": {"title": "h", "kind": "battle", "neutral_only": False,
+                              "ai_still": ai("poster_unreviewed", poster_reviewed_by="")},
         "plain_photo": {"title": "g", "kind": "place", **ph("plain_photo")},
     }
     with tempfile.TemporaryDirectory(prefix="dvsk_v4_") as tmp:
@@ -390,7 +429,7 @@ async def test_foreground_only() -> None:
         sdir = pub / "assets" / "scenes"
         sdir.mkdir(parents=True)
         for name in ("fg_photo_only_cao_quy", "fg_photo_ai_cao_quy", "fg_photo_ai", "ai_only", "neutral_with_ai",
-                     "ai_unreviewed", "plain_photo_cao_quy"):
+                     "ai_unreviewed", "plain_photo_cao_quy", "poster_unreviewed"):
             Image.new("RGB", (8, 8)).save(sdir / f"{name}.jpg", "JPEG")
         lib_path = Path(tmp) / "scene_library.json"
         write_json(lib_path, {"scenes": scenes})
@@ -409,7 +448,7 @@ async def test_foreground_only() -> None:
         alt = r["actionBackdrop"]
         check(r["foregroundOnly"] and alt["source"] == "ai_still" and alt["imageUrl"] == "/assets/scenes/fg_photo_ai.jpg"
               and alt["aiLabel"] == AI_IMAGE_LABEL and alt["tool"] == "Công cụ AI" and alt["creator"] == "Nhóm"
-              and alt["reviewedBy"] == "Người duyệt A",
+              and alt["reviewedBy"] == "Người duyệt A" and alt["posterReviewedBy"] == "Người duyệt ảnh B",
               "Có khung hình clip AI đã duyệt → nền hành động = ảnh tĩnh AI kèm nhãn, tool, creator, reviewed_by")
         for mode in ("FOREGROUND_TALKING", "BACKGROUND_ACTION"):
             r = await resolver.resolve(directive("ai_only", mode))
@@ -419,13 +458,16 @@ async def test_foreground_only() -> None:
         check(r["source"] == "neutral", "foreground_only nhưng thiếu file ảnh → phông trung tính")
         r = await resolver.resolve(directive("neutral_with_ai"))
         check(r["source"] == "neutral", "neutral_only vẫn thắng (ai_still bị bỏ qua tới khi gỡ cờ)")
+        r = await resolver.resolve(directive("poster_unreviewed", "BACKGROUND_ACTION"))
+        check(r["source"] != "ai_still" and "aiLabel" not in r,
+              "Khung hình chưa có poster_reviewed_by (chưa ai xem) → KHÔNG dùng dù clip đã duyệt", r["source"])
         r = await resolver.resolve(directive("ai_unreviewed"))
         check(r["source"] == "neutral" and "aiLabel" not in r,
               "ai_still thiếu reviewed_by không được dùng (rơi về Wikimedia → không có ảnh → trung tính)", r["source"])
         r = await resolver.resolve(directive("plain_photo", "BACKGROUND_ACTION"))
         check(r["source"] == "library" and "foregroundOnly" not in r and "actionBackdrop" not in r,
               "Ảnh thường (không foreground_only) không đổi hành vi")
-        check(finder.calls == ["ai_unreviewed"],
+        check(finder.calls == ["poster_unreviewed", "ai_unreviewed"],
               "Không gọi Wikimedia cho key foreground_only / ai_still / neutral_only", f"gọi: {finder.calls}")
 
 
@@ -484,7 +526,7 @@ export async function run() {
     actionBackdrop: { source: 'neutral', contextTopicKey: 'bach_dang_1288', title: 'Trận Bạch Đằng', subtitle: '1288' } };
   const aiStill = { source: 'ai_still', contextTopicKey: 'bach_dang_1288', title: 'Trận Bạch Đằng',
     imageUrl: 'https://x/assets/scenes/bach_dang_1288.jpg', aiLabel: 'Ảnh minh họa do AI tạo', tool: 'Công cụ AI',
-    creator: 'Nhóm', reviewedBy: 'Người duyệt A' };
+    creator: 'Nhóm', reviewedBy: 'Người duyệt A', posterReviewedBy: 'Người duyệt ảnh B' };
   const photoAi = { ...photo, actionBackdrop: aiStill };
   out.eff = {
     talk: effectiveBackdrop(photo, 'FOREGROUND_TALKING') === photo,
@@ -597,7 +639,8 @@ def test_frontend() -> None:
     ai_html = h["actionPhotoAi"]
     check("Bãi cọc Cao Quỳ" not in ai_html and 'data-testid="ai-image-label"' in ai_html
           and "Ảnh minh họa do AI tạo" in ai_html
-          and all(s in ai_html for s in ("Công cụ: Công cụ AI", "Thực hiện: Nhóm", "Duyệt: Người duyệt A")),
+          and all(s in ai_html for s in ("Công cụ: Công cụ AI", "Thực hiện: Nhóm", "Duyệt clip: Người duyệt A",
+                                          "Duyệt ảnh: Người duyệt ảnh B")),
           "BACKGROUND_ACTION + khung hình AI → nhãn 'Ảnh minh họa do AI tạo' + tool, creator, reviewed_by")
     check('data-testid="ai-image-label"' in h["aiStill"] and "backdrop-attribution" not in h["aiStill"],
           "Ảnh tĩnh AI ở chế độ ảnh tĩnh: hiện nhãn AI thay dòng ghi nguồn ảnh chụp")

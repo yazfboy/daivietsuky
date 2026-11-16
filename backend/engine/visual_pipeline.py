@@ -3752,7 +3752,7 @@ class BackdropResolver:
             return None
         return {**base, "source": "ai_still", "imageUrl": still.poster_path, "aiLabel": still.label,
                 "tool": still.tool, "creator": still.creator, "reviewedBy": still.reviewed_by,
-                "createdAt": still.created_at}
+                "posterReviewedBy": still.poster_reviewed_by, "createdAt": still.created_at}
 
     def _library(self, directive: SceneDirective, entry: LibraryEntry | None,
                  base: dict[str, Any]) -> dict[str, Any] | None:
